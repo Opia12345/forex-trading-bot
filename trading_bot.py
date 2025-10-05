@@ -168,7 +168,7 @@ class AdvancedTradingBot:
         self.symbols = symbols
         self.notifier = TelegramNotifier(telegram_token, telegram_chat_id)
         self.min_confidence = 90
-        self.timeframes = ['1h', '4h']
+        self.timeframes = ['1h']  # Single timeframe to stay within API limits
         self.api_key = api_key
         self.api_call_count = 0
         self.max_api_calls = 75  # Alpha Vantage free tier limit per day
@@ -971,9 +971,12 @@ if __name__ == "__main__":
     TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '5490682482')
     ALPHA_VANTAGE_KEY = os.getenv('ALPHA_VANTAGE_KEY', 'DUZ125XKRQF0RKD0')
     
-    # Get symbols from environment or use default
-    symbols_str = os.getenv('TRADING_SYMBOLS', 'XAUUSD,BOOM500,CRASH500')
+    # Analyze only XAUUSD every hour
+    symbols_str = os.getenv('TRADING_SYMBOLS', 'XAUUSD')
     SYMBOLS = [s.strip() for s in symbols_str.split(',') if s.strip()]
+    
+    logger.info(f"Analyzing: {', '.join(SYMBOLS)}")
+    print(f"📊 Analyzing: {', '.join(SYMBOLS)} (runs every hour)")
     
     # Get minimum confidence
     try:
@@ -984,10 +987,10 @@ if __name__ == "__main__":
     print(f"""
 Configuration:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Symbols:          {', '.join(SYMBOLS)}
+  Symbol:           {', '.join(SYMBOLS)}
   Timeframes:       1h, 4h
   Min Confidence:   {MIN_CONFIDENCE}%
-  Execution Mode:   Single run (GitHub Actions)
+  Execution Mode:   Every hour (XAUUSD only)
   API Provider:     Alpha Vantage
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

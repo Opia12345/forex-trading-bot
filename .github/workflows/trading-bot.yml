@@ -38,7 +38,9 @@ jobs:
         run: |
           echo "🤖 Trading Bot Configuration"
           echo "Python Version: $(python --version)"
-          echo "Symbols: XAUUSD, BOOM500, CRASH500"
+          echo "Symbols: XAUUSD (Gold), BOOM1000 (Boom Index)"
+          echo "Timeframe: 1h"
+          echo "Frequency: Every hour"
           echo "Execution Time: $(date)"
       
       - name: Run trading bot analysis
@@ -46,7 +48,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ALPHA_VANTAGE_KEY: ${{ secrets.ALPHA_VANTAGE_KEY }}
-          TRADING_SYMBOLS: 'XAUUSD,BOOM500,CRASH500'
+          TRADING_SYMBOLS: 'XAUUSD,BOOM1000'
           MIN_CONFIDENCE: '90'
         run: |
           python trading_bot.py
