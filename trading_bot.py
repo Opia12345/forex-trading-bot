@@ -144,14 +144,14 @@ Momentum: {signal.indicators.get('momentum', 'N/A')}
         message = f"⚠️ <b>Bot Error</b>\n\n<code>{error_msg}</code>"
         self.send_message(message)
     
-    def send_startup(self, symbols: List[str], min_confidence: float):
+    def send_startup(self, symbols: List[str], min_confidence: float, timeframes: List[str]):
         """Send startup notification"""
         message = f"""
 🤖 <b>Trading Bot Started</b>
 
 <b>Configuration:</b>
 • Symbols: {', '.join(symbols)}
-• Timeframes: 1h, 4h
+• Timeframe: {', '.join(timeframes)}
 • Min Confidence: {min_confidence}%
 • Mode: GitHub Actions (Hourly)
 
@@ -307,16 +307,21 @@ class AdvancedTradingBot:
             'AUDUSD': 0.6580, 'USDCAD': 1.3850, 'NZDUSD': 0.6120,
             'XAUUSD': 2650.00, 'US30': 38500.00,
             'SPX500': 4850.00, 'NAS100': 16900.00,
-            'BOOM500': 450000.00, 'CRASH500': 8500.00
+            'BOOM500': 450000.00, 'CRASH500': 8500.00,
+            'BOOM1000': 850000.00, 'CRASH1000': 4500.00
         }
         
         price = base_price.get(symbol, 1.10)
         
         # Adjust volatility based on instrument type
         if symbol == 'BOOM500':
-            volatility = 0.02  # High volatility for Boom
+            volatility = 0.02  # High volatility for Boom 500
+        elif symbol == 'BOOM1000':
+            volatility = 0.025  # Very high volatility for Boom 1000
         elif symbol == 'CRASH500':
-            volatility = 0.015  # High volatility for Crash
+            volatility = 0.015  # High volatility for Crash 500
+        elif symbol == 'CRASH1000':
+            volatility = 0.018  # High volatility for Crash 1000
         elif symbol == 'XAUUSD':
             volatility = 0.008  # Medium volatility for Gold
         elif symbol in ['EURUSD', 'GBPUSD', 'USDJPY']:
@@ -825,7 +830,7 @@ class AdvancedTradingBot:
         logger.info(f"{'='*70}\n")
         
         # Send startup notification
-        self.notifier.send_startup(self.symbols, self.min_confidence)
+        self.notifier.send_startup(self.symbols, self.min_confidence, self.timeframes)
         
         signals_found = 0
         signals_list = []
@@ -971,8 +976,8 @@ if __name__ == "__main__":
     TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '5490682482')
     ALPHA_VANTAGE_KEY = os.getenv('ALPHA_VANTAGE_KEY', 'DUZ125XKRQF0RKD0')
     
-    # Analyze only XAUUSD every hour
-    symbols_str = os.getenv('TRADING_SYMBOLS', 'XAUUSD')
+    # Analyze XAUUSD and BOOM1000 every hour
+    symbols_str = os.getenv('TRADING_SYMBOLS', 'XAUUSD,BOOM1000')
     SYMBOLS = [s.strip() for s in symbols_str.split(',') if s.strip()]
     
     logger.info(f"Analyzing: {', '.join(SYMBOLS)}")
@@ -987,11 +992,11 @@ if __name__ == "__main__":
     print(f"""
 Configuration:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Symbol:           {', '.join(SYMBOLS)}
-  Timeframes:       1h, 4h
+  Symbols:          {', '.join(SYMBOLS)}
+  Timeframe:        1h only
   Min Confidence:   {MIN_CONFIDENCE}%
-  Execution Mode:   Every hour (XAUUSD only)
-  API Provider:     Alpha Vantage
+  Execution Mode:   Every hour
+  API Provider:     Alpha Vantage (XAUUSD) / Demo (BOOM1000)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Starting analysis...
