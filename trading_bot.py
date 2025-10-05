@@ -1,7 +1,6 @@
 """
-Advanced Forex & Indices Trading Bot with Telegram Notifications
-Implements multi-timeframe analysis, advanced risk management, and ML-based confirmation
-Enhanced with 90% minimum confidence and interactive Telegram buttons
+Complete Advanced Forex & Indices Trading Bot with Telegram Notifications
+Enhanced version with improved error handling and features
 """
 
 import pandas as pd
@@ -10,11 +9,12 @@ from datetime import datetime, timedelta
 import time
 import requests
 import json
+import os
 from typing import Dict, List, Tuple, Optional
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
-# Configure logging with UTF-8 encoding
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -25,22 +25,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Fix Windows console encoding for emojis
-import sys
-if sys.platform == 'win32':
-    try:
-        sys.stdout.reconfigure(encoding='utf-8')
-        sys.stderr.reconfigure(encoding='utf-8')
-    except Exception:
-        pass
-
 
 @dataclass
 class TradeSignal:
     """Structure for trade signals"""
     symbol: str
-    action: str  # BUY, SELL, HOLD
-    confidence: float  # 0-100
+    action: str
+    confidence: float
     entry_price: float
     stop_loss: float
     take_profit: float
@@ -48,18 +39,26 @@ class TradeSignal:
     timeframe: str
     indicators: Dict
     timestamp: datetime
+    
+    def to_dict(self):
+        """Convert to dictionary for JSON serialization"""
+        data = asdict(self)
+        data['timestamp'] = self.timestamp.isoformat()
+        return data
 
 
 class TelegramNotifier:
-    """Handle Telegram notifications with interactive buttons"""
+    """Handle Telegram notifications with retry logic"""
     
     def __init__(self, bot_token: str, chat_id: str):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.base_url = f"https://api.telegram.org/bot{bot_token}"
+        self.max_retries = 3
         
-    def send_message(self, message: str, parse_mode: str = "HTML", reply_markup: dict = None):
-        """Send message via Telegram with optional buttons"""
+    def send_message(self, message: str, parse_mode: str = "HTML", 
+                    reply_markup: dict = None, retry_count: int = 0) -> bool:
+        """Send message via Telegram with retry logic"""
         url = f"{self.base_url}/sendMessage"
         payload = {
             'chat_id': self.chat_id,
@@ -72,19 +71,31 @@ class TelegramNotifier:
         try:
             response = requests.post(url, json=payload, timeout=10)
             if response.status_code == 200:
-                logger.info(f"Telegram message sent successfully")
+                logger.info("Telegram message sent successfully")
                 return True
+            elif response.status_code == 429 and retry_count < self.max_retries:
+                # Rate limited, wait and retry
+                retry_after = int(response.json().get('parameters', {}).get('retry_after', 30))
+                logger.warning(f"Rate limited. Retrying after {retry_after} seconds...")
+                time.sleep(retry_after)
+                return self.send_message(message, parse_mode, reply_markup, retry_count + 1)
             else:
                 logger.error(f"Failed to send Telegram message: {response.text}")
                 return False
+        except requests.exceptions.Timeout:
+            if retry_count < self.max_retries:
+                logger.warning(f"Timeout. Retry {retry_count + 1}/{self.max_retries}")
+                time.sleep(5)
+                return self.send_message(message, parse_mode, reply_markup, retry_count + 1)
+            logger.error("Max retries reached for Telegram message")
+            return False
         except Exception as e:
             logger.error(f"Error sending Telegram message: {str(e)}")
             return False
     
-    def send_signal(self, signal: TradeSignal):
-        """Send formatted trading signal with interactive buttons"""
+    def send_signal(self, signal: TradeSignal) -> bool:
+        """Send formatted trading signal"""
         
-        # Emoji based on action
         emoji = "🟢" if "BUY" in signal.action else "🔴" if "SELL" in signal.action else "⚪"
         confidence_emoji = "🔥🔥🔥" if signal.confidence >= 95 else "🔥🔥" if signal.confidence >= 92 else "🔥"
         
@@ -114,7 +125,6 @@ Momentum: {signal.indicators.get('momentum', 'N/A')}
 ⚠️ <i>Risk Management: Never risk more than 1-2% of your capital per trade</i>
 """
         
-        # Create inline keyboard buttons
         keyboard = {
             'inline_keyboard': [
                 [
@@ -123,79 +133,58 @@ Momentum: {signal.indicators.get('momentum', 'N/A')}
                 ],
                 [
                     {'text': '📊 View Chart', 'url': f'https://www.tradingview.com/chart/?symbol={signal.symbol}'},
-                ],
-                [
-                    {'text': '📈 Set Alert', 'callback_data': f'alert_{signal.symbol}_{signal.entry_price:.5f}'},
-                    {'text': '💾 Save Signal', 'callback_data': f'save_{signal.symbol}'}
                 ]
             ]
         }
         
-        self.send_message(message, reply_markup=keyboard)
+        return self.send_message(message, reply_markup=keyboard)
     
-    def send_status_message(self, status_data: dict):
-        """Send bot status with control buttons"""
-        
+    def send_error(self, error_msg: str):
+        """Send error notification"""
+        message = f"⚠️ <b>Bot Error</b>\n\n<code>{error_msg}</code>"
+        self.send_message(message)
+    
+    def send_startup(self, symbols: List[str], min_confidence: float):
+        """Send startup notification"""
         message = f"""
-📊 <b>Bot Status Report</b>
+🤖 <b>Trading Bot Started</b>
 
-🤖 Status: {status_data['status']}
-⏰ Uptime: {status_data['uptime']}
-📈 Signals Sent: {status_data['signals_sent']}
-🎯 Success Rate: {status_data.get('success_rate', 'N/A')}
+<b>Configuration:</b>
+• Symbols: {', '.join(symbols)}
+• Timeframes: 1h, 4h
+• Min Confidence: {min_confidence}%
+• Mode: GitHub Actions (Hourly)
 
-📉 Last Analysis:
-{status_data['last_analysis']}
-
-⚙️ Configuration:
-Min Confidence: {status_data['min_confidence']}%
-Symbols: {status_data['symbols_count']}
-Timeframes: {status_data['timeframes']}
+Status: ✅ Active
+Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
-        
-        # Control buttons
-        keyboard = {
-            'inline_keyboard': [
-                [
-                    {'text': '▶️ Start Bot', 'callback_data': 'control_start'},
-                    {'text': '⏸ Pause Bot', 'callback_data': 'control_pause'}
-                ],
-                [
-                    {'text': '🔄 Run Analysis Now', 'callback_data': 'control_analyze'},
-                ],
-                [
-                    {'text': '📊 View Statistics', 'callback_data': 'stats_view'},
-                    {'text': '⚙️ Settings', 'callback_data': 'settings_view'}
-                ]
-            ]
-        }
-        
-        self.send_message(message, reply_markup=keyboard)
+        self.send_message(message)
 
 
 class AdvancedTradingBot:
-    """Advanced trading bot with multi-timeframe analysis and 90% confidence threshold"""
+    """Advanced trading bot with multi-timeframe analysis"""
     
-    def __init__(self, symbols: List[str], telegram_token: str, telegram_chat_id: str):
+    def __init__(self, symbols: List[str], telegram_token: str, telegram_chat_id: str, api_key: str):
         self.symbols = symbols
         self.notifier = TelegramNotifier(telegram_token, telegram_chat_id)
-        self.min_confidence = 90  # INCREASED TO 90%
-        self.timeframes = ['15m', '1h', '4h', '1d']  # Multi-timeframe analysis
-        self.api_key = "DUZ125XKRQF0RKD0"  # Alpha Vantage API Key
-        self.signals_sent = 0
-        self.start_time = datetime.now()
-        self.is_paused = False
+        self.min_confidence = 90
+        self.timeframes = ['1h', '4h']
+        self.api_key = api_key
+        self.api_call_count = 0
+        self.max_api_calls = 75  # Alpha Vantage free tier limit per day
         
     def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
-        """Fetch OHLCV data from Alpha Vantage"""
+        """Fetch OHLCV data from Alpha Vantage with improved error handling"""
         
-        # Map timeframes
+        if self.api_call_count >= self.max_api_calls:
+            logger.warning(f"API call limit reached ({self.max_api_calls}). Using demo data.")
+            return self._generate_demo_data(symbol, limit)
+        
         interval_map = {'15m': '15min', '1h': '60min', '4h': '60min', '1d': 'daily'}
         interval = interval_map.get(timeframe, '60min')
         
-        # For forex pairs
         from_symbol = symbol[:3]
-        to_symbol = symbol[3:6]
+        to_symbol = symbol[3:6] if len(symbol) >= 6 else 'USD'
         
         try:
             url = "https://www.alphavantage.co/query"
@@ -221,7 +210,9 @@ class AdvancedTradingBot:
             response = requests.get(url, params=params, timeout=30)
             data = response.json()
             
-            # Check for errors
+            self.api_call_count += 1
+            logger.info(f"API calls used: {self.api_call_count}/{self.max_api_calls}")
+            
             if "Error Message" in data:
                 logger.error(f"Alpha Vantage Error: {data['Error Message']}")
                 return self._generate_demo_data(symbol, limit)
@@ -230,7 +221,10 @@ class AdvancedTradingBot:
                 logger.warning(f"Alpha Vantage Rate Limit: {data['Note']}")
                 return self._generate_demo_data(symbol, limit)
             
-            # Parse time series data
+            if "Information" in data:
+                logger.warning(f"Alpha Vantage Info: {data['Information']}")
+                return self._generate_demo_data(symbol, limit)
+            
             time_series_key = None
             for key in data.keys():
                 if 'Time Series' in key:
@@ -243,45 +237,108 @@ class AdvancedTradingBot:
             
             time_series = data[time_series_key]
             
-            # Convert to DataFrame
+            if not time_series:
+                logger.warning(f"Empty time series for {symbol}")
+                return self._generate_demo_data(symbol, limit)
+            
             df_data = []
             for timestamp, values in time_series.items():
-                df_data.append({
-                    'timestamp': pd.to_datetime(timestamp),
-                    'open': float(values.get('1. open', 0)),
-                    'high': float(values.get('2. high', 0)),
-                    'low': float(values.get('3. low', 0)),
-                    'close': float(values.get('4. close', 0)),
-                    'volume': int(float(values.get('5. volume', 0)))
-                })
+                try:
+                    df_data.append({
+                        'timestamp': pd.to_datetime(timestamp),
+                        'open': float(values.get('1. open', 0)),
+                        'high': float(values.get('2. high', 0)),
+                        'low': float(values.get('3. low', 0)),
+                        'close': float(values.get('4. close', 0)),
+                        'volume': 0  # FX data doesn't have volume
+                    })
+                except (ValueError, KeyError) as e:
+                    logger.warning(f"Skipping invalid data point: {e}")
+                    continue
+            
+            if not df_data:
+                logger.warning(f"No valid data points for {symbol}")
+                return self._generate_demo_data(symbol, limit)
             
             df = pd.DataFrame(df_data)
             df = df.sort_values('timestamp').reset_index(drop=True)
+            
+            # For 4h timeframe, resample 1h data
+            if timeframe == '4h' and interval == '60min':
+                df = self._resample_to_4h(df)
+            
             df = df.tail(limit)
             
             logger.info(f"Fetched {len(df)} candles for {symbol} ({timeframe})")
             return df
             
+        except requests.exceptions.Timeout:
+            logger.error(f"Timeout fetching data for {symbol}")
+            return self._generate_demo_data(symbol, limit)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request error for {symbol}: {str(e)}")
+            return self._generate_demo_data(symbol, limit)
         except Exception as e:
-            logger.error(f"Error fetching data for {symbol}: {str(e)}")
+            logger.error(f"Unexpected error fetching data for {symbol}: {str(e)}")
             return self._generate_demo_data(symbol, limit)
     
+    def _resample_to_4h(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Resample 1h data to 4h"""
+        df.set_index('timestamp', inplace=True)
+        df_4h = df.resample('4H').agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }).dropna()
+        df_4h.reset_index(inplace=True)
+        return df_4h
+    
     def _generate_demo_data(self, symbol: str, limit: int) -> pd.DataFrame:
-        """Generate demo data as fallback"""
+        """Generate realistic demo data as fallback"""
         logger.warning(f"Using demo data for {symbol}")
         
         dates = pd.date_range(end=datetime.now(), periods=limit, freq='1H')
         np.random.seed(hash(symbol) % 2**32)
         
-        base_price = {'EURUSD': 1.10, 'GBPUSD': 1.27, 'USDJPY': 148.5, 
-                      'AUDUSD': 0.66, 'XAUUSD': 2650, 'US30': 38000, 'SPX500': 4800, 'NAS100': 16800}
+        base_price = {
+            'EURUSD': 1.0850, 'GBPUSD': 1.2650, 'USDJPY': 148.50,
+            'AUDUSD': 0.6580, 'USDCAD': 1.3850, 'NZDUSD': 0.6120,
+            'XAUUSD': 2650.00, 'US30': 38500.00,
+            'SPX500': 4850.00, 'NAS100': 16900.00,
+            'BOOM500': 450000.00, 'CRASH500': 8500.00
+        }
         
         price = base_price.get(symbol, 1.10)
-        close_prices = price + np.cumsum(np.random.randn(limit) * price * 0.0002)
-        high_prices = close_prices + np.random.rand(limit) * price * 0.0003
-        low_prices = close_prices - np.random.rand(limit) * price * 0.0003
-        open_prices = close_prices + np.random.randn(limit) * price * 0.0001
-        volume = np.random.randint(1000, 10000, limit)
+        
+        # Adjust volatility based on instrument type
+        if symbol == 'BOOM500':
+            volatility = 0.02  # High volatility for Boom
+        elif symbol == 'CRASH500':
+            volatility = 0.015  # High volatility for Crash
+        elif symbol == 'XAUUSD':
+            volatility = 0.008  # Medium volatility for Gold
+        elif symbol in ['EURUSD', 'GBPUSD', 'USDJPY']:
+            volatility = 0.0002
+        else:
+            volatility = 0.005
+        
+        # Generate trending price with noise
+        trend = np.linspace(0, np.random.randn() * price * 0.02, limit)
+        noise = np.random.randn(limit) * price * volatility
+        close_prices = price + trend + noise
+        
+        # Generate OHLC from close
+        high_prices = close_prices + np.random.rand(limit) * price * volatility * 1.5
+        low_prices = close_prices - np.random.rand(limit) * price * volatility * 1.5
+        open_prices = np.roll(close_prices, 1)
+        open_prices[0] = close_prices[0]
+        
+        # Add some realistic price action
+        for i in range(1, len(close_prices)):
+            high_prices[i] = max(open_prices[i], close_prices[i], high_prices[i])
+            low_prices[i] = min(open_prices[i], close_prices[i], low_prices[i])
         
         df = pd.DataFrame({
             'timestamp': dates,
@@ -289,7 +346,7 @@ class AdvancedTradingBot:
             'high': high_prices,
             'low': low_prices,
             'close': close_prices,
-            'volume': volume
+            'volume': 0  # FX doesn't have volume
         })
         
         return df
@@ -324,95 +381,99 @@ class AdvancedTradingBot:
         df['bb_upper'] = df['bb_middle'] + (bb_std * 2)
         df['bb_lower'] = df['bb_middle'] - (bb_std * 2)
         
-        # ATR (Average True Range) for volatility
+        # ATR
         high_low = df['high'] - df['low']
         high_close = np.abs(df['high'] - df['close'].shift())
         low_close = np.abs(df['low'] - df['close'].shift())
         true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
         df['atr'] = true_range.rolling(window=14).mean()
         
-        # Stochastic Oscillator
+        # Stochastic
         low_14 = df['low'].rolling(window=14).min()
         high_14 = df['high'].rolling(window=14).max()
         df['stoch_k'] = 100 * (df['close'] - low_14) / (high_14 - low_14)
         df['stoch_d'] = df['stoch_k'].rolling(window=3).mean()
         
-        # ADX (Average Directional Index) for trend strength
+        # ADX
         plus_dm = df['high'].diff()
         minus_dm = -df['low'].diff()
         plus_dm[plus_dm < 0] = 0
         minus_dm[minus_dm < 0] = 0
         
-        tr = true_range
-        atr_14 = tr.rolling(window=14).mean()
+        atr_14 = true_range.rolling(window=14).mean()
         plus_di = 100 * (plus_dm.rolling(window=14).mean() / atr_14)
         minus_di = 100 * (minus_dm.rolling(window=14).mean() / atr_14)
         dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
         df['adx'] = dx.rolling(window=14).mean()
         
-        # Add momentum indicators
+        # Momentum indicators
         df['momentum'] = df['close'] - df['close'].shift(10)
         df['roc'] = ((df['close'] - df['close'].shift(12)) / df['close'].shift(12)) * 100
+        
+        # Fill NaN values
+        df.fillna(method='bfill', inplace=True)
+        df.fillna(0, inplace=True)
         
         return df
     
     def identify_trend(self, df: pd.DataFrame) -> str:
         """Identify market trend"""
         latest = df.iloc[-1]
-        
-        # Multiple conditions for trend
         conditions = []
         
-        # Moving average alignment
+        # EMA alignment
         if latest['ema_9'] > latest['ema_21'] > latest['sma_50']:
             conditions.append('bullish')
         elif latest['ema_9'] < latest['ema_21'] < latest['sma_50']:
             conditions.append('bearish')
         
-        # ADX for trend strength
+        # ADX strength
         if latest['adx'] > 25:
             if latest['close'] > latest['sma_50']:
                 conditions.append('bullish')
             else:
                 conditions.append('bearish')
         
-        # Price momentum
+        # Momentum
         if latest['momentum'] > 0 and latest['roc'] > 0:
             conditions.append('bullish')
         elif latest['momentum'] < 0 and latest['roc'] < 0:
             conditions.append('bearish')
         
-        # Count conditions
+        # Price vs MA
+        if latest['close'] > latest['sma_50'] > latest['sma_200']:
+            conditions.append('bullish')
+        elif latest['close'] < latest['sma_50'] < latest['sma_200']:
+            conditions.append('bearish')
+        
         bullish_count = conditions.count('bullish')
         bearish_count = conditions.count('bearish')
         
         if bullish_count > bearish_count:
-            return 'STRONG_UPTREND' if bullish_count >= 2 else 'UPTREND'
+            return 'STRONG_UPTREND' if bullish_count >= 3 else 'UPTREND'
         elif bearish_count > bullish_count:
-            return 'STRONG_DOWNTREND' if bearish_count >= 2 else 'DOWNTREND'
+            return 'STRONG_DOWNTREND' if bearish_count >= 3 else 'DOWNTREND'
         else:
             return 'SIDEWAYS'
     
     def calculate_confidence(self, signals: List[str], df: pd.DataFrame, timeframe_results: Dict) -> float:
-        """Calculate enhanced confidence score to reach 90%+ - IMPROVED ALGORITHM"""
+        """Calculate confidence score (0-99%)"""
         
         latest = df.iloc[-1]
-        score = 40  # Reduced base score to allow more room for bonuses
+        score = 40  # Base score
         
-        # 1. Signal agreement (max +25)
-        buy_signals = sum(1 for s in signals if 'BUY' in s.upper() or 'BULLISH' in s.upper())
-        sell_signals = sum(1 for s in signals if 'SELL' in s.upper() or 'BEARISH' in s.upper())
+        # Signal agreement (25 points)
+        buy_signals = sum(1 for s in signals if 'BUY' in s.upper() or 'BULLISH' in s.upper() or 'oversold' in s.lower())
+        sell_signals = sum(1 for s in signals if 'SELL' in s.upper() or 'BEARISH' in s.upper() or 'overbought' in s.lower())
         total_signals = len(signals)
         
         if total_signals > 0:
             agreement = max(buy_signals, sell_signals) / total_signals
             score += agreement * 25
-            
-            # Bonus for unanimous agreement
-            if agreement == 1.0 and total_signals >= 5:
+            if agreement >= 0.85 and total_signals >= 5:
                 score += 5
         
-        # 2. Multi-timeframe trend alignment (max +15)
+        # Multi-timeframe alignment (12 points)
         trends = [r['trend'] for r in timeframe_results.values()]
         bullish_trends = sum(1 for t in trends if 'UP' in t)
         bearish_trends = sum(1 for t in trends if 'DOWN' in t)
@@ -421,99 +482,97 @@ class AdvancedTradingBot:
         trend_alignment = max(bullish_trends, bearish_trends) / len(trends)
         score += trend_alignment * 12
         
-        # Bonus for strong trends
-        if strong_trends >= 2:
+        if strong_trends >= 1:
             score += 3
         
-        # 3. Trend strength via ADX (max +12)
-        if latest['adx'] > 40:  # Very strong trend
+        # ADX strength (12 points)
+        if latest['adx'] > 40:
             score += 12
-        elif latest['adx'] > 30:  # Strong trend
+        elif latest['adx'] > 30:
             score += 8
-        elif latest['adx'] > 25:  # Moderate trend
+        elif latest['adx'] > 25:
             score += 5
         
-        # 4. RSI confirmation (max +8)
-        if 'BUY' in str(buy_signals):
-            if 30 < latest['rsi'] < 50:  # Ideal RSI for buy
+        # RSI position (8 points)
+        if buy_signals > sell_signals:
+            if 30 < latest['rsi'] < 50:
                 score += 8
             elif 25 < latest['rsi'] < 55:
                 score += 5
+            elif latest['rsi'] < 30:
+                score += 10  # Oversold bonus
         else:
-            if 50 < latest['rsi'] < 70:  # Ideal RSI for sell
+            if 50 < latest['rsi'] < 70:
                 score += 8
             elif 45 < latest['rsi'] < 75:
                 score += 5
+            elif latest['rsi'] > 70:
+                score += 10  # Overbought bonus
         
-        # 5. MACD strength (max +8)
+        # MACD momentum (8 points)
         macd_hist = abs(latest['macd_hist'])
         avg_macd_hist = df['macd_hist'].tail(20).abs().mean()
         
-        if macd_hist > avg_macd_hist * 1.5:  # Strong MACD
+        if macd_hist > avg_macd_hist * 1.5:
             score += 8
         elif macd_hist > avg_macd_hist * 1.2:
             score += 5
         
-        # 6. Volume confirmation (max +7)
-        avg_volume = df['volume'].tail(20).mean()
-        if latest['volume'] > avg_volume * 1.5:  # Strong volume
-            score += 7
-        elif latest['volume'] > avg_volume * 1.2:
-            score += 4
+        # Bollinger Band position (6 points)
+        bb_range = latest['bb_upper'] - latest['bb_lower']
+        if bb_range > 0:
+            bb_position = (latest['close'] - latest['bb_lower']) / bb_range
+            if buy_signals > sell_signals:
+                if bb_position < 0.3:
+                    score += 6
+                elif bb_position < 0.4:
+                    score += 3
+            else:
+                if bb_position > 0.7:
+                    score += 6
+                elif bb_position > 0.6:
+                    score += 3
         
-        # 7. Price position relative to Bollinger Bands (max +6)
-        bb_position = (latest['close'] - latest['bb_lower']) / (latest['bb_upper'] - latest['bb_lower'])
-        if 'BUY' in str(buy_signals):
-            if bb_position < 0.3:  # Near lower band
-                score += 6
-            elif bb_position < 0.4:
+        # Stochastic position (5 points)
+        if buy_signals > sell_signals:
+            if latest['stoch_k'] < 20 and latest['stoch_d'] < 20:
+                score += 5
+            elif latest['stoch_k'] < 30:
                 score += 3
         else:
-            if bb_position > 0.7:  # Near upper band
-                score += 6
-            elif bb_position > 0.6:
+            if latest['stoch_k'] > 80 and latest['stoch_d'] > 80:
+                score += 5
+            elif latest['stoch_k'] > 70:
                 score += 3
         
-        # 8. Stochastic confirmation (max +5)
-        if 'BUY' in str(buy_signals):
-            if latest['stoch_k'] < 30 and latest['stoch_d'] < 30:
-                score += 5
-            elif latest['stoch_k'] < 40:
-                score += 3
-        else:
-            if latest['stoch_k'] > 70 and latest['stoch_d'] > 70:
-                score += 5
-            elif latest['stoch_k'] > 60:
-                score += 3
-        
-        # 9. Momentum confirmation (max +6)
+        # Momentum strength (6 points)
         if abs(latest['momentum']) > df['momentum'].tail(20).abs().mean() * 1.3:
             score += 6
         elif abs(latest['momentum']) > df['momentum'].tail(20).abs().mean():
             score += 3
         
-        # 10. Moving average alignment bonus (max +8)
+        # MA alignment (8 points)
         if latest['ema_9'] > latest['ema_21'] > latest['sma_50'] > latest['sma_200']:
-            score += 8  # Perfect bullish alignment
+            score += 8
         elif latest['ema_9'] < latest['ema_21'] < latest['sma_50'] < latest['sma_200']:
-            score += 8  # Perfect bearish alignment
+            score += 8
         elif (latest['ema_9'] > latest['ema_21'] > latest['sma_50']) or \
              (latest['ema_9'] < latest['ema_21'] < latest['sma_50']):
-            score += 5  # Good alignment
+            score += 5
         
-        return min(score, 99)  # Cap at 99%
+        return min(score, 99)
     
     def calculate_risk_levels(self, df: pd.DataFrame, action: str) -> Tuple[float, float, float]:
-        """Calculate stop loss and take profit levels"""
+        """Calculate stop loss and take profit levels using ATR"""
         
         latest = df.iloc[-1]
         atr = latest['atr']
         entry = latest['close']
         
-        # Use ATR-based stop loss and take profit with better risk-reward
+        # Adjust multipliers for better risk/reward
         if 'BUY' in action:
             stop_loss = entry - (2 * atr)
-            take_profit = entry + (4 * atr)  # 2:1 risk-reward for high confidence
+            take_profit = entry + (4 * atr)
         else:  # SELL
             stop_loss = entry + (2 * atr)
             take_profit = entry - (4 * atr)
@@ -530,7 +589,7 @@ class AdvancedTradingBot:
         df = self.fetch_ohlcv(symbol, timeframe)
         
         if len(df) < 200:
-            logger.warning(f"Insufficient data for {symbol} {timeframe}")
+            logger.warning(f"Insufficient data for {symbol} {timeframe}: {len(df)} candles")
             return None
         
         df = self.calculate_indicators(df)
@@ -541,41 +600,47 @@ class AdvancedTradingBot:
         signals = []
         signal_score = 0
         
-        # RSI signals with more weight
+        # RSI signals
         if latest['rsi'] < 30:
             signals.append("RSI oversold")
-            signal_score += 3
+            signal_score += 4
         elif latest['rsi'] > 70:
             signals.append("RSI overbought")
-            signal_score -= 3
+            signal_score -= 4
         elif 30 <= latest['rsi'] < 40:
             signals.append("RSI approaching oversold")
-            signal_score += 1
+            signal_score += 2
         elif 60 < latest['rsi'] <= 70:
             signals.append("RSI approaching overbought")
-            signal_score -= 1
+            signal_score -= 2
         
-        # MACD crossover with histogram confirmation
-        if prev['macd'] < prev['macd_signal'] and latest['macd'] > latest['macd_signal']:
+        # MACD crossover
+        if prev['macd'] <= prev['macd_signal'] and latest['macd'] > latest['macd_signal']:
             signals.append("MACD bullish crossover")
-            signal_score += 4
+            signal_score += 5
             if latest['macd_hist'] > 0:
                 signal_score += 1
-        elif prev['macd'] > prev['macd_signal'] and latest['macd'] < latest['macd_signal']:
+        elif prev['macd'] >= prev['macd_signal'] and latest['macd'] < latest['macd_signal']:
             signals.append("MACD bearish crossover")
-            signal_score -= 4
+            signal_score -= 5
             if latest['macd_hist'] < 0:
                 signal_score -= 1
+        elif latest['macd'] > latest['macd_signal'] and latest['macd_hist'] > prev['macd_hist']:
+            signals.append("MACD bullish momentum")
+            signal_score += 2
+        elif latest['macd'] < latest['macd_signal'] and latest['macd_hist'] < prev['macd_hist']:
+            signals.append("MACD bearish momentum")
+            signal_score -= 2
         
-        # Moving average crossover
-        if prev['ema_9'] < prev['ema_21'] and latest['ema_9'] > latest['ema_21']:
+        # EMA crossover
+        if prev['ema_9'] <= prev['ema_21'] and latest['ema_9'] > latest['ema_21']:
             signals.append("EMA bullish crossover")
-            signal_score += 3
-        elif prev['ema_9'] > prev['ema_21'] and latest['ema_9'] < latest['ema_21']:
+            signal_score += 4
+        elif prev['ema_9'] >= prev['ema_21'] and latest['ema_9'] < latest['ema_21']:
             signals.append("EMA bearish crossover")
-            signal_score -= 3
+            signal_score -= 4
         
-        # Price vs moving averages
+        # Price vs MA
         if latest['close'] > latest['sma_50'] > latest['sma_200']:
             signals.append("Price above key MAs")
             signal_score += 2
@@ -590,19 +655,32 @@ class AdvancedTradingBot:
         elif latest['close'] > latest['bb_upper']:
             signals.append("Above upper BB")
             signal_score -= 3
+        elif prev['close'] <= prev['bb_lower'] and latest['close'] > latest['bb_lower']:
+            signals.append("BB bounce from lower")
+            signal_score += 3
+        elif prev['close'] >= prev['bb_upper'] and latest['close'] < latest['bb_upper']:
+            signals.append("BB rejection from upper")
+            signal_score -= 3
         
         # Stochastic
         if latest['stoch_k'] < 20 and latest['stoch_d'] < 20:
             signals.append("Stochastic oversold")
-            signal_score += 2
+            signal_score += 3
+            if prev['stoch_k'] <= prev['stoch_d'] and latest['stoch_k'] > latest['stoch_d']:
+                signals.append("Stochastic bullish cross")
+                signal_score += 2
         elif latest['stoch_k'] > 80 and latest['stoch_d'] > 80:
             signals.append("Stochastic overbought")
-            signal_score -= 2
+            signal_score -= 3
+            if prev['stoch_k'] >= prev['stoch_d'] and latest['stoch_k'] < latest['stoch_d']:
+                signals.append("Stochastic bearish cross")
+                signal_score -= 2
         
         # ADX trend strength
         if latest['adx'] > 30:
-            signals.append("Strong trend (ADX>30)")
-            # Don't add to score, just note it
+            signals.append(f"Strong trend (ADX: {latest['adx']:.1f})")
+        elif latest['adx'] > 25:
+            signals.append(f"Trending (ADX: {latest['adx']:.1f})")
         
         # Momentum
         if latest['momentum'] > 0:
@@ -612,7 +690,15 @@ class AdvancedTradingBot:
             signals.append("Negative momentum")
             signal_score -= 1
         
-        # Trend identification
+        # ROC
+        if abs(latest['roc']) > 2:
+            if latest['roc'] > 0:
+                signals.append("Strong positive ROC")
+                signal_score += 2
+            else:
+                signals.append("Strong negative ROC")
+                signal_score -= 2
+        
         trend = self.identify_trend(df)
         
         return {
@@ -625,71 +711,80 @@ class AdvancedTradingBot:
     def analyze_symbol(self, symbol: str) -> Optional[TradeSignal]:
         """Multi-timeframe analysis for a symbol"""
         
+        logger.info(f"\n{'='*60}")
         logger.info(f"Analyzing {symbol}...")
+        logger.info(f"{'='*60}")
         
         try:
-            # Analyze multiple timeframes
             timeframe_results = {}
             for tf in self.timeframes:
                 result = self.analyze_single_timeframe(symbol, tf)
                 if result:
                     timeframe_results[tf] = result
-                time.sleep(12)  # Alpha Vantage rate limiting (5 calls per minute)
+                    logger.info(f"{symbol} {tf}: Score={result['score']}, Trend={result['trend']}, Signals={len(result['signals'])}")
+                else:
+                    logger.warning(f"No result for {symbol} {tf}")
+                
+                # Rate limiting between API calls
+                time.sleep(13)
             
             if not timeframe_results:
+                logger.warning(f"No valid timeframe results for {symbol}")
                 return None
             
-            # Use primary timeframe (1h) for calculations
-            primary_tf = '1h'
-            primary_result = timeframe_results.get(primary_tf)
-            
-            if not primary_result:
-                # Use first available timeframe
-                primary_tf = list(timeframe_results.keys())[0]
-                primary_result = timeframe_results[primary_tf]
+            # Use primary timeframe (1h) or first available
+            primary_tf = '1h' if '1h' in timeframe_results else list(timeframe_results.keys())[0]
+            primary_result = timeframe_results[primary_tf]
             
             df = primary_result['df']
             latest = df.iloc[-1]
             
-            # Aggregate scores from all timeframes
+            # Calculate average score across timeframes
             total_score = sum(r['score'] for r in timeframe_results.values())
             avg_score = total_score / len(timeframe_results)
             
-            # Check timeframe agreement
+            # Analyze trends across timeframes
             trends = [r['trend'] for r in timeframe_results.values()]
             bullish_trends = sum(1 for t in trends if 'UP' in t)
             bearish_trends = sum(1 for t in trends if 'DOWN' in t)
             strong_trends = sum(1 for t in trends if 'STRONG' in t)
             
-            # STRICTER CRITERIA for 90%+ confidence
-            # Require stronger agreement and higher scores
-            if avg_score >= 5 and bullish_trends >= 3 and strong_trends >= 1:
+            logger.info(f"{symbol} - Avg Score: {avg_score:.2f}, Bullish TFs: {bullish_trends}, Bearish TFs: {bearish_trends}, Strong: {strong_trends}")
+            
+            # Determine action based on scores and trends
+            action = None
+            
+            # Adjusted thresholds for 2 timeframes
+            if avg_score >= 6 and bullish_trends >= 1 and strong_trends >= 1:
                 action = "STRONG BUY"
-            elif avg_score >= 3 and bullish_trends >= 3:
+            elif avg_score >= 4 and bullish_trends >= 1:
                 action = "BUY"
-            elif avg_score <= -5 and bearish_trends >= 3 and strong_trends >= 1:
+            elif avg_score <= -6 and bearish_trends >= 1 and strong_trends >= 1:
                 action = "STRONG SELL"
-            elif avg_score <= -3 and bearish_trends >= 3:
+            elif avg_score <= -4 and bearish_trends >= 1:
                 action = "SELL"
             else:
-                return None  # No clear signal
+                logger.info(f"{symbol}: No clear signal (score: {avg_score:.2f})")
+                return None
             
-            # Calculate confidence with improved algorithm
+            # Collect all signals from all timeframes
             all_signals = []
             for r in timeframe_results.values():
                 all_signals.extend(r['signals'])
             
+            # Calculate confidence
             confidence = self.calculate_confidence(all_signals, df, timeframe_results)
             
-            # Only proceed if confidence is 90% or higher
+            logger.info(f"{symbol}: Action={action}, Confidence={confidence:.1f}%")
+            
             if confidence < self.min_confidence:
-                logger.info(f"{symbol}: Confidence {confidence:.1f}% below {self.min_confidence}% threshold")
+                logger.info(f"{symbol}: Confidence {confidence:.1f}% below threshold {self.min_confidence}%")
                 return None
             
             # Calculate risk levels
             stop_loss, take_profit, risk_reward = self.calculate_risk_levels(df, action)
             
-            # Create signal
+            # Create trade signal
             signal = TradeSignal(
                 symbol=symbol,
                 action=action,
@@ -704,230 +799,243 @@ class AdvancedTradingBot:
                     'macd': latest['macd'],
                     'adx': latest['adx'],
                     'trend': primary_result['trend'],
-                    'momentum': 'BULLISH' if avg_score > 0 else 'BEARISH'
+                    'momentum': 'BULLISH' if avg_score > 0 else 'BEARISH',
+                    'score': avg_score
                 },
                 timestamp=datetime.now()
             )
             
+            logger.info(f"✅ SIGNAL GENERATED: {signal.symbol} {signal.action} @ {signal.entry_price:.5f}")
             return signal
             
         except Exception as e:
-            logger.error(f"Error analyzing {symbol}: {str(e)}")
+            logger.error(f"Error analyzing {symbol}: {str(e)}", exc_info=True)
             return None
     
-    def get_status_data(self) -> dict:
-        """Get current bot status data"""
-        uptime = datetime.now() - self.start_time
-        hours = int(uptime.total_seconds() // 3600)
-        minutes = int((uptime.total_seconds() % 3600) // 60)
-        
-        return {
-            'status': '⏸ PAUSED' if self.is_paused else '✅ ACTIVE',
-            'uptime': f"{hours}h {minutes}m",
-            'signals_sent': self.signals_sent,
-            'success_rate': 'N/A',  # Can be implemented with trade tracking
-            'last_analysis': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'min_confidence': self.min_confidence,
-            'symbols_count': len(self.symbols),
-            'timeframes': ', '.join(self.timeframes)
-        }
-    
-    def send_status_update(self):
-        """Send status update with buttons"""
-        status_data = self.get_status_data()
-        self.notifier.send_status_message(status_data)
-    
     def run_analysis(self):
-        """Run analysis on all symbols"""
-        if self.is_paused:
-            logger.info("Bot is paused. Skipping analysis.")
-            return
+        """Run analysis on all symbols - SINGLE EXECUTION"""
         
-        logger.info(f"\n{'='*60}")
-        logger.info(f"Running analysis at {datetime.now()}")
-        logger.info(f"Minimum Confidence Threshold: {self.min_confidence}%")
-        logger.info(f"{'='*60}\n")
+        logger.info(f"\n{'='*70}")
+        logger.info(f"🤖 TRADING BOT STARTED - GitHub Actions Mode")
+        logger.info(f"{'='*70}")
+        logger.info(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"Symbols: {', '.join(self.symbols)}")
+        logger.info(f"Timeframes: {', '.join(self.timeframes)}")
+        logger.info(f"Min Confidence: {self.min_confidence}%")
+        logger.info(f"{'='*70}\n")
+        
+        # Send startup notification
+        self.notifier.send_startup(self.symbols, self.min_confidence)
         
         signals_found = 0
+        signals_list = []
         
-        for symbol in self.symbols:
+        for i, symbol in enumerate(self.symbols, 1):
             try:
+                logger.info(f"\n[{i}/{len(self.symbols)}] Processing {symbol}...")
+                
                 signal = self.analyze_symbol(symbol)
                 
-                if signal and signal.action != 'HOLD':
-                    logger.info(f"✅ HIGH CONFIDENCE Signal for {symbol}: {signal.action} "
-                              f"(Confidence: {signal.confidence:.1f}%)")
-                    self.notifier.send_signal(signal)
-                    self.signals_sent += 1
-                    signals_found += 1
-                    time.sleep(2)  # Rate limiting for Telegram
+                if signal:
+                    logger.info(f"✅ HIGH CONFIDENCE SIGNAL: {symbol} {signal.action} ({signal.confidence:.1f}%)")
+                    
+                    # Send to Telegram
+                    if self.notifier.send_signal(signal):
+                        signals_found += 1
+                        signals_list.append(signal)
+                    
+                    time.sleep(2)  # Delay between Telegram messages
                 else:
-                    logger.info(f"❌ No qualifying signal for {symbol} (below {self.min_confidence}% threshold)")
+                    logger.info(f"ℹ️ No high-confidence signal for {symbol}")
+                
+                # Add delay between symbols to avoid rate limits
+                if i < len(self.symbols):
+                    time.sleep(3)
                     
             except Exception as e:
-                logger.error(f"Error processing {symbol}: {str(e)}")
+                error_msg = f"Error processing {symbol}: {str(e)}"
+                logger.error(error_msg, exc_info=True)
+                self.notifier.send_error(error_msg)
         
-        summary_msg = f"""
-📊 <b>Analysis Complete</b>
-
-Symbols Analyzed: {len(self.symbols)}
-Signals Found: {signals_found}
-Confidence Threshold: {self.min_confidence}%
-
-⏰ Next analysis in configured interval
-        """
+        # Send summary
+        summary_msg = self._generate_summary(signals_found, signals_list)
+        self.notifier.send_message(summary_msg)
         
-        # Send summary with quick action buttons
-        keyboard = {
-            'inline_keyboard': [
-                [
-                    {'text': '🔄 Analyze Again', 'callback_data': 'control_analyze'},
-                    {'text': '📊 View Status', 'callback_data': 'stats_view'}
-                ]
-            ]
-        }
+        logger.info(f"\n{'='*70}")
+        logger.info(f"✅ ANALYSIS COMPLETE")
+        logger.info(f"Symbols Analyzed: {len(self.symbols)}")
+        logger.info(f"Signals Generated: {signals_found}")
+        logger.info(f"API Calls Used: {self.api_call_count}/{self.max_api_calls}")
+        logger.info(f"{'='*70}\n")
         
-        self.notifier.send_message(summary_msg, reply_markup=keyboard)
-        
-        logger.info(f"\n✅ Analysis complete. High confidence signals sent: {signals_found}")
+        return signals_found
     
-    def start(self, interval_minutes: int = 60):
-        """Start continuous monitoring"""
+    def _generate_summary(self, signals_found: int, signals_list: List[TradeSignal]) -> str:
+        """Generate analysis summary message"""
         
-        startup_message = f"""
-🤖 <b>Advanced Trading Bot Started</b>
+        summary = f"""
+📊 <b>Hourly Analysis Complete</b>
 
-📊 <b>Configuration:</b>
-Symbols: {', '.join(self.symbols)}
-Interval: Every {interval_minutes} minutes
-Min Confidence: <b>{self.min_confidence}%</b> 🎯
-Timeframes: {', '.join(self.timeframes)}
+<b>Summary:</b>
+• Symbols Analyzed: {len(self.symbols)}
+• Signals Found: {signals_found}
+• Confidence Threshold: {self.min_confidence}%
+• API Calls Used: {self.api_call_count}/{self.max_api_calls}
 
-🚀 Bot is now active and monitoring markets...
-        """
+<b>Time:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
         
-        # Create startup keyboard with control buttons
-        keyboard = {
-            'inline_keyboard': [
-                [
-                    {'text': '⏸ Pause Bot', 'callback_data': 'control_pause'},
-                    {'text': '📊 View Status', 'callback_data': 'stats_view'}
-                ],
-                [
-                    {'text': '🔄 Run Analysis Now', 'callback_data': 'control_analyze'}
-                ]
-            ]
-        }
+        if signals_list:
+            summary += "\n<b>Signals Generated:</b>\n"
+            for signal in signals_list:
+                emoji = "🟢" if "BUY" in signal.action else "🔴"
+                summary += f"{emoji} {signal.symbol}: {signal.action} ({signal.confidence:.1f}%)\n"
+        else:
+            summary += "\n⚪ No high-confidence signals detected this hour.\n"
         
-        self.notifier.send_message(startup_message, reply_markup=keyboard)
-        logger.info(f"Trading Bot Started Successfully with {self.min_confidence}% minimum confidence")
+        summary += "\n⏰ Next analysis in 1 hour"
         
-        iteration = 0
-        while True:
-            try:
-                iteration += 1
-                self.run_analysis()
-                
-                # Send status update every 4 iterations (4 hours if running hourly)
-                if iteration % 4 == 0:
-                    self.send_status_update()
-                
-                next_run = datetime.now() + timedelta(minutes=interval_minutes)
-                logger.info(f"\n⏰ Next analysis at: {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
-                time.sleep(interval_minutes * 60)
-                
-            except KeyboardInterrupt:
-                shutdown_msg = """
-🛑 <b>Trading Bot Stopped</b>
-
-Bot has been manually stopped by user.
-
-📊 Session Summary:
-Total Signals Sent: {signals}
-Session Duration: {duration}
-
-Thank you for using the trading bot!
-                """.format(
-                    signals=self.signals_sent,
-                    duration=str(datetime.now() - self.start_time).split('.')[0]
-                )
-                self.notifier.send_message(shutdown_msg)
-                logger.info("Bot stopped by user")
-                break
-                
-            except Exception as e:
-                error_msg = f"""
-⚠️ <b>Bot Error Detected</b>
-
-Error: {str(e)[:200]}
-
-Bot will retry in 5 minutes...
-                """
-                logger.error(f"Error in main loop: {str(e)}")
-                self.notifier.send_message(error_msg)
-                time.sleep(300)
-
-
-# Bot callback handler (for handling button clicks)
-def handle_telegram_callbacks(bot: AdvancedTradingBot):
-    """
-    This function would handle Telegram callback queries from button presses.
-    You would need to set up a separate webhook or polling mechanism.
+        return summary
     
-    Example implementation:
-    """
-    logger.info("Telegram callback handler would be implemented here")
-    logger.info("Use python-telegram-bot library for full implementation")
-    # Implementation requires: pip install python-telegram-bot
-    pass
+    def save_signal_to_log(self, signal: TradeSignal):
+        """Save signal to JSON log file"""
+        try:
+            log_file = 'signals_log.json'
+            
+            # Load existing logs
+            if os.path.exists(log_file):
+                with open(log_file, 'r') as f:
+                    logs = json.load(f)
+            else:
+                logs = []
+            
+            # Append new signal
+            logs.append(signal.to_dict())
+            
+            # Save back to file
+            with open(log_file, 'w') as f:
+                json.dump(logs, f, indent=2)
+            
+            logger.info(f"Signal saved to {log_file}")
+            
+        except Exception as e:
+            logger.error(f"Error saving signal to log: {str(e)}")
+
+
+def validate_environment():
+    """Validate environment and configuration"""
+    logger.info("Validating environment...")
+    
+    # Check Python version
+    import sys
+    python_version = sys.version_info
+    if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 7):
+        logger.error(f"Python 3.7+ required. Current: {python_version.major}.{python_version.minor}")
+        return False
+    
+    # Check required packages
+    required_packages = ['pandas', 'numpy', 'requests']
+    missing_packages = []
+    
+    for package in required_packages:
+        try:
+            __import__(package)
+        except ImportError:
+            missing_packages.append(package)
+    
+    if missing_packages:
+        logger.error(f"Missing required packages: {', '.join(missing_packages)}")
+        logger.info("Install with: pip install pandas numpy requests")
+        return False
+    
+    logger.info("✅ Environment validation passed")
+    return True
 
 
 if __name__ == "__main__":
-    # CONFIGURATION
-    TELEGRAM_BOT_TOKEN = "7950477685:AAEexbQXDHZ2UHzYJmO_TCrFFlHE__Umicw"
-    TELEGRAM_CHAT_ID = "5490682482"
-    
-    # Symbols to monitor (Forex and Gold)
-    SYMBOLS = [
-        'XAUUSD',   # Gold / US Dollar
-    ]
     
     print("""
-╔══════════════════════════════════════════════════════════════╗
-║      ADVANCED FOREX TRADING BOT - 90% CONFIDENCE MODE       ║
-╚══════════════════════════════════════════════════════════════╝
+╔══════════════════════════════════════════════════════════════════╗
+║       ADVANCED FOREX & INDICES TRADING BOT v2.0                 ║
+║              GitHub Actions - Hourly Execution                   ║
+╚══════════════════════════════════════════════════════════════════╝
+""")
+    
+    # Validate environment
+    if not validate_environment():
+        print("\n❌ Environment validation failed. Exiting...")
+        exit(1)
+    
+    # Get configuration from environment or use hardcoded values
+    TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '7950477685:AAEexbQXDHZ2UHzYJmO_TCrFFlHE__Umicw')
+    TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '5490682482')
+    ALPHA_VANTAGE_KEY = os.getenv('ALPHA_VANTAGE_KEY', 'DUZ125XKRQF0RKD0')
+    
+    # Get symbols from environment or use default
+    symbols_str = os.getenv('TRADING_SYMBOLS', 'XAUUSD,BOOM500,CRASH500')
+    SYMBOLS = [s.strip() for s in symbols_str.split(',') if s.strip()]
+    
+    # Get minimum confidence
+    try:
+        MIN_CONFIDENCE = float(os.getenv('MIN_CONFIDENCE', '90'))
+    except ValueError:
+        MIN_CONFIDENCE = 90.0
+    
+    print(f"""
+Configuration:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Symbols:          {', '.join(SYMBOLS)}
+  Timeframes:       1h, 4h
+  Min Confidence:   {MIN_CONFIDENCE}%
+  Execution Mode:   Single run (GitHub Actions)
+  API Provider:     Alpha Vantage
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Key Features:
-✅ Minimum 90% confidence threshold
-✅ Enhanced multi-timeframe analysis
-✅ Interactive Telegram buttons for control
-✅ Advanced technical indicator scoring
-✅ Real-time market monitoring
+Starting analysis...
+""")
+    
+    try:
+        # Create bot instance
+        bot = AdvancedTradingBot(
+            symbols=SYMBOLS,
+            telegram_token=TELEGRAM_BOT_TOKEN,
+            telegram_chat_id=TELEGRAM_CHAT_ID,
+            api_key=ALPHA_VANTAGE_KEY
+        )
+        
+        # Set minimum confidence
+        bot.min_confidence = MIN_CONFIDENCE
+        
+        # Run single analysis
+        signals_count = bot.run_analysis()
+        
+        print(f"""
+╔══════════════════════════════════════════════════════════════════╗
+║                    ✅ EXECUTION COMPLETE                         ║
+╚══════════════════════════════════════════════════════════════════╝
 
-Starting bot...
-    """)
-    
-    # Create and start bot
-    bot = AdvancedTradingBot(
-        symbols=SYMBOLS,
-        telegram_token=TELEGRAM_BOT_TOKEN,
-        telegram_chat_id=TELEGRAM_CHAT_ID
-    )
-    
-    # Display configuration
-    print(f"Minimum Confidence: {bot.min_confidence}%")
-    print(f"Symbols: {', '.join(SYMBOLS)}")
-    print(f"Timeframes: {', '.join(bot.timeframes)}")
-    print("\n" + "="*60 + "\n")
-    
-    # Run single analysis (for testing)
-    print("Running initial analysis...\n")
-    bot.run_analysis()
-    
-    # Start continuous monitoring (uncomment to run continuously)
-    print("\n" + "="*60)
-    print("Starting continuous monitoring...")
-    print("Press Ctrl+C to stop the bot")
-    print("="*60 + "\n")
-    
-    bot.start(interval_minutes=60)  # Run every minute
+Results:
+  • Signals Generated: {signals_count}
+  • Check Telegram for details
+  • Logs saved to: trading_bot.log
+
+Next execution in 1 hour (via GitHub Actions)
+""")
+        
+    except KeyboardInterrupt:
+        print("\n\n⚠️ Bot stopped by user")
+        logger.info("Bot stopped by user (KeyboardInterrupt)")
+        
+    except Exception as e:
+        error_msg = f"❌ CRITICAL ERROR: {str(e)}"
+        print(f"\n{error_msg}")
+        logger.error(error_msg, exc_info=True)
+        
+        # Try to send error notification
+        try:
+            notifier = TelegramNotifier(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+            notifier.send_error(str(e))
+        except:
+            logger.error("Failed to send error notification to Telegram")
+        
+        exit(1)
