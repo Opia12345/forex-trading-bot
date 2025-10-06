@@ -1,6 +1,6 @@
 """
 Complete Advanced Forex & Indices Trading Bot with Telegram Notifications
-Enhanced version with improved error handling and features
+Enhanced version with 70% confidence threshold and improved signal display
 """
 
 import pandas as pd
@@ -97,16 +97,26 @@ class TelegramNotifier:
         """Send formatted trading signal"""
         
         emoji = "🟢" if "BUY" in signal.action else "🔴" if "SELL" in signal.action else "⚪"
-        confidence_emoji = "🔥🔥🔥" if signal.confidence >= 95 else "🔥🔥" if signal.confidence >= 92 else "🔥"
+        
+        # Confidence rating with emojis
+        if signal.confidence >= 85:
+            confidence_emoji = "🔥🔥🔥"
+            confidence_label = "VERY HIGH"
+        elif signal.confidence >= 75:
+            confidence_emoji = "🔥🔥"
+            confidence_label = "HIGH"
+        else:
+            confidence_emoji = "🔥"
+            confidence_label = "MODERATE"
         
         message = f"""
-{emoji} <b>HIGH CONFIDENCE SIGNAL</b> {confidence_emoji}
+{emoji} <b>{confidence_label} CONFIDENCE SIGNAL</b> {confidence_emoji}
 
 <b>Symbol:</b> {signal.symbol}
 <b>Action:</b> {signal.action}
-<b>Confidence:</b> {signal.confidence:.1f}% ⭐
 
 💰 <b>Trade Setup</b>
+<b>Confidence:</b> {signal.confidence:.1f}% ⭐
 Entry: {signal.entry_price:.5f}
 Stop Loss: {signal.stop_loss:.5f}
 Take Profit: {signal.take_profit:.5f}
@@ -167,7 +177,7 @@ class AdvancedTradingBot:
     def __init__(self, symbols: List[str], telegram_token: str, telegram_chat_id: str, api_key: str):
         self.symbols = symbols
         self.notifier = TelegramNotifier(telegram_token, telegram_chat_id)
-        self.min_confidence = 90
+        self.min_confidence = 70  # Lowered from 90% to 70%
         self.timeframes = ['1h']  # Single timeframe to stay within API limits
         self.api_key = api_key
         self.api_call_count = 0
@@ -759,14 +769,14 @@ class AdvancedTradingBot:
             # Determine action based on scores and trends
             action = None
             
-            # Adjusted thresholds for 2 timeframes
-            if avg_score >= 6 and bullish_trends >= 1 and strong_trends >= 1:
+            # Adjusted thresholds for more aggressive signal generation (70% confidence)
+            if avg_score >= 4 and bullish_trends >= 1:
                 action = "STRONG BUY"
-            elif avg_score >= 4 and bullish_trends >= 1:
+            elif avg_score >= 2 and bullish_trends >= 1:
                 action = "BUY"
-            elif avg_score <= -6 and bearish_trends >= 1 and strong_trends >= 1:
-                action = "STRONG SELL"
             elif avg_score <= -4 and bearish_trends >= 1:
+                action = "STRONG SELL"
+            elif avg_score <= -2 and bearish_trends >= 1:
                 action = "SELL"
             else:
                 logger.info(f"{symbol}: No clear signal (score: {avg_score:.2f})")
@@ -962,7 +972,7 @@ if __name__ == "__main__":
     print("""
 ╔══════════════════════════════════════════════════════════════════╗
 ║       ADVANCED FOREX & INDICES TRADING BOT v2.0                 ║
-║              GitHub Actions - Hourly Execution                   ║
+║         70% Confidence Threshold - Hourly Execution             ║
 ╚══════════════════════════════════════════════════════════════════╝
 """)
     
@@ -983,18 +993,18 @@ if __name__ == "__main__":
     logger.info(f"Analyzing: {', '.join(SYMBOLS)}")
     print(f"📊 Analyzing: {', '.join(SYMBOLS)} (runs every hour)")
     
-    # Get minimum confidence
+    # Get minimum confidence (default to 70%)
     try:
-        MIN_CONFIDENCE = float(os.getenv('MIN_CONFIDENCE', '90'))
+        MIN_CONFIDENCE = float(os.getenv('MIN_CONFIDENCE', '70'))
     except ValueError:
-        MIN_CONFIDENCE = 90.0
+        MIN_CONFIDENCE = 70.0
     
     print(f"""
 Configuration:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Symbols:          {', '.join(SYMBOLS)}
   Timeframe:        1h only
-  Min Confidence:   {MIN_CONFIDENCE}%
+  Min Confidence:   {MIN_CONFIDENCE}% ⚡ (More Aggressive)
   Execution Mode:   Every hour
   API Provider:     Alpha Vantage (XAUUSD) / Demo (BOOM1000)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
