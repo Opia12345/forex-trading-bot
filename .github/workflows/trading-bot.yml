@@ -1,4 +1,4 @@
-name: Forex Trading Bot
+name: XAUUSD Trading Bot - Deriv API
 
 on:
   schedule:
@@ -32,24 +32,24 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas numpy requests python-dateutil pytz
+          pip install pandas numpy requests websocket-client python-dateutil pytz
       
       - name: Display bot configuration
         run: |
-          echo "🤖 Trading Bot Configuration"
+          echo "🤖 XAUUSD Trading Bot - Deriv API Edition"
           echo "Python Version: $(python --version)"
-          echo "Symbols: XAUUSD (Gold), BOOM1000 (Boom Index)"
+          echo "Symbol: XAUUSD (Gold)"
           echo "Timeframe: 1h"
+          echo "Data Source: Deriv API"
           echo "Frequency: Every hour"
           echo "Execution Time: $(date)"
       
       - name: Run trading bot analysis
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          ALPHA_VANTAGE_KEY: ${{ secrets.ALPHA_VANTAGE_KEY }}
-          TRADING_SYMBOLS: 'XAUUSD,BOOM1000'
-          MIN_CONFIDENCE: '70'
+          MAIN_CHAT_ID: ${{ secrets.MAIN_CHAT_ID }}
+          SIMPLE_CHAT_ID: ${{ secrets.SIMPLE_CHAT_ID }}
+          DERIV_APP_ID: ${{ secrets.DERIV_APP_ID }}
         run: |
           python trading_bot.py
         timeout-minutes: 30
@@ -69,3 +69,4 @@ jobs:
         run: |
           echo "❌ Trading bot execution failed!"
           echo "Check the logs for details."
+          echo "GitHub Run: ${{ github.run_number }}"
