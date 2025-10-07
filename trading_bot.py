@@ -778,10 +778,10 @@ if __name__ == "__main__":
     
     # Main Telegram group (detailed signals)
     TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '7950477685:AAEexbQXDHZ2UHzYJmO_TCrFFlHE__Umicw')
-    MAIN_CHAT_ID = os.getenv('MAIN_CHAT_ID', '-1001003032435335')
+    MAIN_CHAT_ID = os.getenv('MAIN_CHAT_ID', '-1003032435335')
     
     # Second Telegram group (simple signals)
-    SIMPLE_CHAT_ID = os.getenv('SIMPLE_CHAT_ID', '-1001003052865285')  # Replace with actual second group ID
+    SIMPLE_CHAT_ID = os.getenv('SIMPLE_CHAT_ID', '-1003052865285')  # Replace with actual second group ID
     
     # Deriv API App ID (optional, defaults to demo app)
     DERIV_APP_ID = os.getenv('DERIV_APP_ID', '1089')
