@@ -951,33 +951,44 @@ class EliteTradingBot:
             return None, 0, "Multi-Timeframe", indicators
     
     def calculate_risk_levels(self, df: pd.DataFrame, action: str) -> Tuple[float, float, float]:
-        """Calculate optimal stop loss and take profit (1:2 RR)"""
+        """Calculate optimal stop loss and take profit for DAY TRADING (tighter stops)"""
         latest = df.iloc[-1]
         atr = latest['atr']
         entry = latest['close']
         
-        # Dynamic stop loss based on ATR and recent swing points
-        recent_swings = df.tail(50)
+        # DAY TRADING: Use tighter stops based on ATR
+        # Typical day trade holds for hours, not days
+        recent_swings = df.tail(20)  # ✅ CHANGED: Shorter lookback (was 50)
         
         if 'BUY' in action:
-            # Stop loss below recent swing low
+            # Tighter stop loss for day trading
             swing_low = recent_swings['low'].min()
-            atr_stop = entry - (2.5 * atr)
-            stop_loss = min(swing_low * 0.998, atr_stop)
+            atr_stop = entry - (1.5 * atr)  # ✅ CHANGED: 1.5x ATR (was 2.5x)
+            stop_loss = min(swing_low * 0.999, atr_stop)  # ✅ CHANGED: 0.999 (was 0.998)
             
-            # Take profit at 1:2 RR
+            # Day trading target: 1:2 RR but realistic for intraday moves
             risk = entry - stop_loss
             take_profit = entry + (2 * risk)
             
         else:  # SELL
-            # Stop loss above recent swing high
+            # Tighter stop loss for day trading
             swing_high = recent_swings['high'].max()
-            atr_stop = entry + (2.5 * atr)
-            stop_loss = max(swing_high * 1.002, atr_stop)
+            atr_stop = entry + (1.5 * atr)  # ✅ CHANGED: 1.5x ATR (was 2.5x)
+            stop_loss = max(swing_high * 1.001, atr_stop)  # ✅ CHANGED: 1.001 (was 1.002)
             
-            # Take profit at 1:2 RR
+            # Day trading target: 1:2 RR
             risk = stop_loss - entry
             take_profit = entry - (2 * risk)
+        
+        # ✅ NEW: Ensure minimum stop distance (0.1% for day trades)
+        min_stop_distance = entry * 0.001
+        if abs(entry - stop_loss) < min_stop_distance:
+            if 'BUY' in action:
+                stop_loss = entry - min_stop_distance
+                take_profit = entry + (2 * min_stop_distance)
+            else:
+                stop_loss = entry + min_stop_distance
+                take_profit = entry - (2 * min_stop_distance)
         
         # Calculate actual RR
         risk_amount = abs(entry - stop_loss)
@@ -985,7 +996,6 @@ class EliteTradingBot:
         risk_reward = reward_amount / risk_amount if risk_amount > 0 else 2.0
         
         return stop_loss, take_profit, risk_reward
-    
     def analyze_symbol(self, symbol: str) -> Optional[TradeSignal]:
         """Analyze a single symbol"""
         logger.info(f"\n{'='*70}")
