@@ -32,13 +32,16 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TradeSignal:
-    """Enhanced trade signal structure"""
+    """Enhanced trade signal structure with multiple take profits"""
     symbol: str
     action: str
     confidence: float
     entry_price: float
     stop_loss: float
-    take_profit: float  # 1:2 RR only
+    take_profit: float  # Main TP (1:2 RR)
+    tp1: float  # 20 pips
+    tp2: float  # 50 pips
+    tp3: float  # 1:2 RR (same as take_profit)
     risk_reward_ratio: float
     timeframe: str
     strategy_name: str
@@ -53,7 +56,6 @@ class TradeSignal:
         data = asdict(self)
         data['timestamp'] = self.timestamp.isoformat()
         return data
-
 
 class EconomicCalendar:
     """Monitor high-impact economic events"""
@@ -252,7 +254,9 @@ class TelegramNotifier:
 <b>Confidence:</b> {signal.confidence:.1f}% ⭐
 <b>Entry:</b> {signal.entry_price:.2f}
 <b>Stop Loss:</b> {signal.stop_loss:.2f}
-<b>Take Profit:</b> {signal.take_profit:.2f} (1:2 RR)
+<b>TP1:</b> {signal.tp1:.2f} (20 pips) 🎯
+<b>TP2:</b> {signal.tp2:.2f} (50 pips) 🎯🎯
+<b>TP3:</b> {signal.tp3:.2f} (1:2 RR) 🎯🎯🎯
 <b>Risk/Reward:</b> 1:{signal.risk_reward_ratio:.2f}
 
 📊 <b>Market Analysis</b>
@@ -303,11 +307,14 @@ Smart Money: {signal.indicators.get('smart_money', 'N/A')}
         message = f"""
 {emoji}
 
-<b>{signal.symbol}</b> | {signal.confidence:.0f}%
+<b>{signal.symbol}</b>
 {news_line}
-Entry: {signal.entry_price:.2f}
-TP: {signal.take_profit:.2f} (1:2 RR)
-SL: {signal.stop_loss:.2f}
+<b>Entry:</b> {signal.entry_price:.2f}
+<b>Stop Loss:</b> {signal.stop_loss:.2f}
+<b>TP1:</b> {signal.tp1:.2f} (20 pips) 🎯
+<b>TP2:</b> {signal.tp2:.2f} (50 pips) 🎯🎯
+<b>TP3:</b> {signal.tp3:.2f} (1:2 RR) 🎯🎯🎯
+<b>Risk/Reward:</b> 1:{signal.risk_reward_ratio:.2f}
 """
         
         return self.send_message(message, self.simple_chat_id)
@@ -950,52 +957,94 @@ class EliteTradingBot:
         else:
             return None, 0, "Multi-Timeframe", indicators
     
-    def calculate_risk_levels(self, df: pd.DataFrame, action: str) -> Tuple[float, float, float]:
-        """Calculate optimal stop loss and take profit for DAY TRADING (tighter stops)"""
+    def calculate_risk_levels(self, df: pd.DataFrame, action: str, symbol: str) -> Tuple[float, float, float, float, float, float]:
+        """Calculate ULTRA-TIGHT stop loss and 3 take profit levels for day trading/scalping"""
         latest = df.iloc[-1]
         atr = latest['atr']
         entry = latest['close']
         
-        # DAY TRADING: Use tighter stops based on ATR
-        # Typical day trade holds for hours, not days
-        recent_swings = df.tail(20)  # ✅ CHANGED: Shorter lookback (was 50)
+        # Determine pip value based on symbol
+        if 'JPY' in symbol:
+            pip_value = 0.01  # JPY pairs (1 pip = 0.01)
+        elif symbol in ['XAUUSD']:
+            pip_value = 0.10  # Gold (1 pip = $0.10)
+        elif symbol in ['BTCUSD', 'ETHUSD']:
+            pip_value = 1.00  # Crypto (1 pip = $1.00)
+        elif symbol in ['XAGUSD']:
+            pip_value = 0.01  # Silver
+        else:
+            pip_value = 0.0001  # Most forex pairs (EUR/USD, GBP/USD)
+        
+        # ULTRA-TIGHT stop loss for day trading/scalping
+        recent_swings = df.tail(10)  # Very short lookback for scalping
         
         if 'BUY' in action:
-            # Tighter stop loss for day trading
+            # Ultra-tight stop: 0.8x ATR (aggressive for day trading)
             swing_low = recent_swings['low'].min()
-            atr_stop = entry - (1.5 * atr)  # ✅ CHANGED: 1.5x ATR (was 2.5x)
-            stop_loss = min(swing_low * 0.999, atr_stop)  # ✅ CHANGED: 0.999 (was 0.998)
+            atr_stop = entry - (0.8 * atr)  # 🔥 ULTRA TIGHT
+            stop_loss = min(swing_low * 0.9995, atr_stop)
             
-            # Day trading target: 1:2 RR but realistic for intraday moves
+            # Calculate risk
             risk = entry - stop_loss
-            take_profit = entry + (2 * risk)
+            
+            # TP1: 20 pips
+            tp1 = entry + (20 * pip_value)
+            
+            # TP2: 50 pips
+            tp2 = entry + (50 * pip_value)
+            
+            # TP3: 1:2 Risk/Reward
+            tp3 = entry + (2 * risk)
+            
+            # Main take profit (use TP3 as default)
+            take_profit = tp3
             
         else:  # SELL
-            # Tighter stop loss for day trading
+            # Ultra-tight stop: 0.8x ATR
             swing_high = recent_swings['high'].max()
-            atr_stop = entry + (1.5 * atr)  # ✅ CHANGED: 1.5x ATR (was 2.5x)
-            stop_loss = max(swing_high * 1.001, atr_stop)  # ✅ CHANGED: 1.001 (was 1.002)
+            atr_stop = entry + (0.8 * atr)  # 🔥 ULTRA TIGHT
+            stop_loss = max(swing_high * 1.0005, atr_stop)
             
-            # Day trading target: 1:2 RR
+            # Calculate risk
             risk = stop_loss - entry
-            take_profit = entry - (2 * risk)
+            
+            # TP1: 20 pips
+            tp1 = entry - (20 * pip_value)
+            
+            # TP2: 50 pips
+            tp2 = entry - (50 * pip_value)
+            
+            # TP3: 1:2 Risk/Reward
+            tp3 = entry - (2 * risk)
+            
+            # Main take profit (use TP3 as default)
+            take_profit = tp3
         
-        # ✅ NEW: Ensure minimum stop distance (0.1% for day trades)
-        min_stop_distance = entry * 0.001
+        # Ensure minimum stop distance (0.05% for ultra-tight day trades)
+        min_stop_distance = entry * 0.0005
         if abs(entry - stop_loss) < min_stop_distance:
             if 'BUY' in action:
                 stop_loss = entry - min_stop_distance
-                take_profit = entry + (2 * min_stop_distance)
+                risk = min_stop_distance
+                tp1 = entry + (20 * pip_value)
+                tp2 = entry + (50 * pip_value)
+                tp3 = entry + (2 * risk)
+                take_profit = tp3
             else:
                 stop_loss = entry + min_stop_distance
-                take_profit = entry - (2 * min_stop_distance)
+                risk = min_stop_distance
+                tp1 = entry - (20 * pip_value)
+                tp2 = entry - (50 * pip_value)
+                tp3 = entry - (2 * risk)
+                take_profit = tp3
         
         # Calculate actual RR
         risk_amount = abs(entry - stop_loss)
         reward_amount = abs(take_profit - entry)
         risk_reward = reward_amount / risk_amount if risk_amount > 0 else 2.0
         
-        return stop_loss, take_profit, risk_reward
+        return stop_loss, take_profit, tp1, tp2, tp3, risk_reward
+    
     def analyze_symbol(self, symbol: str) -> Optional[TradeSignal]:
         """Analyze a single symbol"""
         logger.info(f"\n{'='*70}")
@@ -1050,7 +1099,7 @@ class EliteTradingBot:
                 return None
             
             # Calculate risk levels
-            stop_loss, take_profit, risk_reward = self.calculate_risk_levels(df, action)
+            stop_loss, take_profit, tp1, tp2, tp3, risk_reward = self.calculate_risk_levels(df, action, symbol)
             
             # Check for news events
             advisory = self.calendar.get_market_advisory()
@@ -1071,6 +1120,9 @@ class EliteTradingBot:
                 entry_price=latest['close'],
                 stop_loss=stop_loss,
                 take_profit=take_profit,
+                tp1=tp1,  # NEW
+                tp2=tp2,  # NEW
+                tp3=tp3,  # NEW
                 risk_reward_ratio=risk_reward,
                 timeframe=self.timeframe,
                 strategy_name=strategy_name,
