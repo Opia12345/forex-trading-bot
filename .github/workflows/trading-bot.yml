@@ -13,6 +13,11 @@ on:
         required: false
         default: 'false'
         type: boolean
+      check_news:
+        description: 'Enable news monitoring'
+        required: false
+        default: 'true'
+        type: boolean
 
 jobs:
   run-trading-bot:
@@ -31,7 +36,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas numpy requests websocket-client python-dateutil pytz
+          pip install pandas numpy requests python-dateutil pytz
       
       - name: Display bot configuration
         run: |
@@ -55,14 +60,15 @@ jobs:
           echo "  GitHub Run:        #${{ github.run_number }}"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
-          echo "✨ v7.0 Features:"
-          echo "  ✅ Advanced multi-indicator analysis"
-          echo "  ✅ EMA, RSI, MACD, Bollinger Bands"
-          echo "  ✅ Stochastic, ADX, Supertrend"
-          echo "  ✅ Volume confirmation"
+          echo "✨ v7.0 NEW Features:"
+          echo "  ✅ Advanced multi-indicator analysis (9+ indicators)"
+          echo "  ✅ EMA, RSI, MACD, Bollinger Bands, Stochastic"
+          echo "  ✅ ADX, Supertrend, Volume & Momentum"
           echo "  ✅ 80%+ confidence threshold"
+          echo "  ✅ Market hours validation (no weekend Gold trading)"
+          echo "  ✅ High-impact news monitoring & alerts"
           echo "  ✅ Risk-based position sizing"
-          echo "  ✅ 3-level take profit system"
+          echo "  ✅ 3-level take profit system (50%/30%/20%)"
           echo "  ✅ Complete trade management plans"
           echo "  ✅ Duplicate signal prevention"
           echo "  ✅ R:R ratio calculation"
@@ -123,6 +129,13 @@ jobs:
           else
             echo "❌ Telegram API unreachable - notifications will fail!"
           fi
+          
+          # Test Forex Factory (for news)
+          if curl -s -o /dev/null -w "%{http_code}" https://nfs.faireconomy.media/ff_calendar_thisweek.json | grep -q "200"; then
+            echo "✅ Forex Factory news feed reachable"
+          else
+            echo "⚠️ Forex Factory unreachable - news monitoring may be limited"
+          fi
       
       - name: Run elite trading bot v7.0
         env:
@@ -132,14 +145,38 @@ jobs:
           DERIV_APP_ID: ${{ secrets.DERIV_APP_ID }}
           ACCOUNT_BALANCE: ${{ secrets.ACCOUNT_BALANCE }}
           RISK_PERCENT: ${{ secrets.RISK_PERCENT }}
+          CHECK_NEWS: ${{ github.event.inputs.check_news || 'true' }}
           PYTHONUNBUFFERED: "1"
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "🤖 Starting Elite Trading Bot v7.0..."
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Features enabled:"
+          echo "  ⏰ Market hours validation: YES"
+          echo "  📰 News monitoring: $CHECK_NEWS"
+          echo "  🚫 Weekend Gold trading: BLOCKED"
+          echo ""
           
-          # Run the bot (should be named trading_bot.py or similar)
-          python trading_bot.py
+          # The bot file should be named trading_bot_v7.py
+          if [ ! -f "trading_bot_v7.py" ]; then
+            echo "⚠️ trading_bot_v7.py not found, checking alternatives..."
+            
+            if [ -f "trading_bot.py" ]; then
+              echo "✅ Found trading_bot.py, using that"
+              python trading_bot.py
+            elif [ -f "elite_trading_bot.py" ]; then
+              echo "✅ Found elite_trading_bot.py, using that"
+              python elite_trading_bot.py
+            else
+              echo "❌ ERROR: No bot file found!"
+              echo "Expected: trading_bot_v7.py, trading_bot.py, or elite_trading_bot.py"
+              exit 1
+            fi
+          else
+            echo "✅ Running trading_bot_v7.py"
+            python trading_bot_v7.py
+          fi
+          
           EXIT_CODE=$?
           
           echo ""
@@ -159,12 +196,13 @@ jobs:
           if [ -f "elite_trading_bot.log" ]; then
             echo "📄 Log file generated successfully"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "Last 50 lines of log:"
-            tail -n 50 elite_trading_bot.log
+            echo "Last 80 lines of log:"
+            tail -n 80 elite_trading_bot.log
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             # Check for signals in log
             if grep -q "HIGH-CONFIDENCE SIGNAL:" elite_trading_bot.log; then
+              echo ""
               echo "✅ HIGH CONFIDENCE SIGNALS DETECTED!"
               echo ""
               grep "HIGH-CONFIDENCE SIGNAL:" elite_trading_bot.log
@@ -179,14 +217,40 @@ jobs:
               echo "Signal Details:"
               grep -A 3 "HIGH-CONFIDENCE SIGNAL:" elite_trading_bot.log
             else
+              echo ""
               echo "ℹ️ No 80%+ confidence signals this cycle"
+              
+              # Check reasons
+              if grep -q "Market closed" elite_trading_bot.log || grep -q "Weekend" elite_trading_bot.log; then
+                echo "📅 Reason: Market closed (weekend or off-hours)"
+              elif grep -q "high-impact news" elite_trading_bot.log; then
+                echo "📰 Reason: High-impact news event nearby"
+              elif grep -q "Below threshold" elite_trading_bot.log; then
+                echo "📊 Reason: Confidence below 80% threshold"
+              fi
+              
               echo "💡 Quality over quantity - waiting for premium setups"
             fi
             
-            # Check for errors
-            if grep -qi "error" elite_trading_bot.log | grep -v "Error analyzing" | head -5; then
+            # Check for market status
+            if grep -q "Market Status" elite_trading_bot.log || grep -q "Forex market" elite_trading_bot.log; then
               echo ""
-              echo "⚠️ Errors detected in log:"
+              echo "📊 Market Status Checks:"
+              grep -E "Market Status|Forex market|Crypto market|market closed" elite_trading_bot.log | head -5
+            fi
+            
+            # Check for news monitoring
+            if grep -q "news" elite_trading_bot.log; then
+              echo ""
+              echo "📰 News Monitoring:"
+              grep -i "news" elite_trading_bot.log | head -5
+            fi
+            
+            # Check for errors (excluding normal ones)
+            ERROR_COUNT=$(grep -i "error" elite_trading_bot.log | grep -v "Error analyzing" | wc -l)
+            if [ $ERROR_COUNT -gt 0 ]; then
+              echo ""
+              echo "⚠️ $ERROR_COUNT error(s) detected in log:"
               grep -i "error" elite_trading_bot.log | grep -v "Error analyzing" | head -5
             fi
           else
@@ -236,10 +300,24 @@ jobs:
           echo "Completed: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
           echo ""
           
+          # Day of week check
+          DAY_OF_WEEK=$(date +%u)  # 1=Monday, 7=Sunday
+          if [ $DAY_OF_WEEK -eq 6 ] || [ $DAY_OF_WEEK -eq 7 ]; then
+            echo "📅 Weekend: Gold (XAUUSD) market is CLOSED"
+            echo "   Bitcoin (BTCUSD) still active 24/7"
+            echo ""
+          fi
+          
           if [ "${{ job.status }}" = "success" ]; then
             echo "✅ Bot executed successfully"
             echo "📊 Check Telegram for any 80%+ signals"
             echo "📄 Logs saved as artifacts"
+            echo ""
+            echo "What was checked:"
+            echo "  ⏰ Market hours (Gold weekend blocking)"
+            echo "  📰 High-impact news events"
+            echo "  📊 Technical indicator confluence"
+            echo "  🎯 80%+ confidence threshold"
             echo ""
             echo "Signals sent with:"
             echo "  • Entry prices & position sizes"
@@ -255,13 +333,17 @@ jobs:
           
           echo ""
           echo "v7.0 Active Features:"
-          echo "  ✅ Multi-indicator confluence analysis"
-          echo "  ✅ 80%+ confidence threshold"
+          echo "  ✅ Multi-indicator confluence analysis (9+ indicators)"
+          echo "  ✅ 80%+ confidence threshold (quality over quantity)"
+          echo "  ✅ Market hours validation (no weekend Gold)"
+          echo "  ✅ High-impact news monitoring & alerts"
           echo "  ✅ Risk-based position sizing"
           echo "  ✅ 3-level TP system (50%/30%/20%)"
           echo "  ✅ Breakeven automation strategy"
           echo "  ✅ Volume & momentum confirmation"
+          echo "  ✅ Duplicate signal prevention"
           echo ""
           echo "Next scheduled run: Top of next hour"
           echo "Manual trigger: Available in Actions tab"
+          echo "  → Toggle 'check_news' to disable news monitoring"
           echo ""
