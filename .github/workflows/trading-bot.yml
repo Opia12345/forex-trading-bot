@@ -1,4 +1,4 @@
-name: Elite Multi-Asset Trading Bot v4.0 - FIXED
+name: Elite Trading Bot v7.0 - Signal Generator
 
 on:
   schedule:
@@ -31,39 +31,47 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas numpy requests websocket-client scipy python-dateutil pytz
+          pip install pandas numpy requests websocket-client python-dateutil pytz
       
       - name: Display bot configuration
         run: |
           echo "╔══════════════════════════════════════════════════════════════════╗"
-          echo "║         🚀 Elite Multi-Asset Trading Bot v4.0 - FIXED           ║"
+          echo "║         🚀 Elite Trading Bot v7.0 - SIGNAL GENERATOR            ║"
           echo "╚══════════════════════════════════════════════════════════════════╝"
           echo ""
           echo "Configuration:"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "  Python Version:    $(python --version)"
+          echo "  Mode:              Signal Generation Only"
           echo "  Symbols:           XAUUSD (Gold), BTCUSD (Bitcoin)"
-          echo "  Strategies:        6 Advanced Algorithms (Ensemble)"
+          echo "  Strategy:          Multi-Indicator Confluence v7.0"
           echo "  Timeframe:         1 Hour"
-          echo "  Min Confidence:    70% (Optimized)"
-          echo "  Strategy Votes:    3/6 Required"
-          echo "  Stop Loss:         1.5x ATR (Realistic)"
+          echo "  Min Confidence:    80% (HIGH QUALITY ONLY)"
           echo "  Data Source:       Deriv API (Real-time)"
-          echo "  Features:          NFP Detection, Market Regime Analysis"
+          echo "  Account Balance:   \$${ACCOUNT_BALANCE:-500}"
+          echo "  Risk Per Trade:    ${RISK_PERCENT:-2.0}%"
           echo "  Frequency:         Every hour (on the hour)"
           echo "  Execution Time:    $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
           echo "  GitHub Run:        #${{ github.run_number }}"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
-          echo "🔧 Critical Fixes Applied:"
-          echo "  ✅ Confidence threshold lowered (80% → 70%)"
-          echo "  ✅ Strategy consensus reduced (4/6 → 3/6)"
-          echo "  ✅ Stop loss widened (0.8x → 1.5x ATR)"
-          echo "  ✅ Individual strategy thresholds optimized"
+          echo "✨ v7.0 Features:"
+          echo "  ✅ Advanced multi-indicator analysis"
+          echo "  ✅ EMA, RSI, MACD, Bollinger Bands"
+          echo "  ✅ Stochastic, ADX, Supertrend"
+          echo "  ✅ Volume confirmation"
+          echo "  ✅ 80%+ confidence threshold"
+          echo "  ✅ Risk-based position sizing"
+          echo "  ✅ 3-level take profit system"
+          echo "  ✅ Complete trade management plans"
+          echo "  ✅ Duplicate signal prevention"
+          echo "  ✅ R:R ratio calculation"
           echo ""
       
-      - name: Verify Telegram secrets
+      - name: Verify secrets
         run: |
+          echo "Checking required secrets..."
+          
           if [ -z "${{ secrets.TELEGRAM_BOT_TOKEN }}" ]; then
             echo "❌ ERROR: TELEGRAM_BOT_TOKEN secret not set!"
             exit 1
@@ -76,27 +84,69 @@ jobs:
             echo "❌ ERROR: SIMPLE_CHAT_ID secret not set!"
             exit 1
           fi
-          echo "✅ All Telegram secrets configured"
+          
+          echo "✅ All required secrets configured"
+          
+          # Optional secrets
+          if [ -n "${{ secrets.ACCOUNT_BALANCE }}" ]; then
+            echo "✅ ACCOUNT_BALANCE configured: \$${{ secrets.ACCOUNT_BALANCE }}"
+          else
+            echo "ℹ️ ACCOUNT_BALANCE not set, using default: \$500"
+          fi
+          
+          if [ -n "${{ secrets.RISK_PERCENT }}" ]; then
+            echo "✅ RISK_PERCENT configured: ${{ secrets.RISK_PERCENT }}%"
+          else
+            echo "ℹ️ RISK_PERCENT not set, using default: 2.0%"
+          fi
+          
+          if [ -n "${{ secrets.DERIV_APP_ID }}" ]; then
+            echo "✅ DERIV_APP_ID configured"
+          else
+            echo "ℹ️ DERIV_APP_ID not set, using default"
+          fi
       
       - name: Check network connectivity
         run: |
           echo "Testing network connectivity..."
-          curl -s -o /dev/null -w "Deriv API: %{http_code}\n" https://api.deriv.com || echo "⚠️ Deriv API unreachable"
-          curl -s -o /dev/null -w "Telegram API: %{http_code}\n" https://api.telegram.org || echo "⚠️ Telegram API unreachable"
+          
+          # Test Deriv API
+          if curl -s -o /dev/null -w "%{http_code}" https://api.deriv.com | grep -q "200\|301\|302"; then
+            echo "✅ Deriv API reachable"
+          else
+            echo "⚠️ Deriv API unreachable - may affect data quality"
+          fi
+          
+          # Test Telegram API
+          if curl -s -o /dev/null -w "%{http_code}" https://api.telegram.org | grep -q "200\|301\|302"; then
+            echo "✅ Telegram API reachable"
+          else
+            echo "❌ Telegram API unreachable - notifications will fail!"
+          fi
       
-      - name: Run elite trading bot analysis
+      - name: Run elite trading bot v7.0
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           MAIN_CHAT_ID: ${{ secrets.MAIN_CHAT_ID }}
           SIMPLE_CHAT_ID: ${{ secrets.SIMPLE_CHAT_ID }}
           DERIV_APP_ID: ${{ secrets.DERIV_APP_ID }}
+          ACCOUNT_BALANCE: ${{ secrets.ACCOUNT_BALANCE }}
+          RISK_PERCENT: ${{ secrets.RISK_PERCENT }}
           PYTHONUNBUFFERED: "1"
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🤖 Starting analysis..."
+          echo "🤖 Starting Elite Trading Bot v7.0..."
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          python trading_bot.py
+          
+          # Rename the bot file if it has a different name
+          if [ -f "elite_trading_bot_mt5.py" ]; then
+            mv elite_trading_bot_mt5.py trading_bot_v7.py
+          fi
+          
+          # Run the bot (should be named trading_bot_v7.py or similar)
+          python trading_bot_v7.py
           EXIT_CODE=$?
+          
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           if [ $EXIT_CODE -eq 0 ]; then
@@ -106,7 +156,7 @@ jobs:
           fi
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           exit $EXIT_CODE
-        timeout-minutes: 30
+        timeout-minutes: 15
       
       - name: Check log file
         if: always()
@@ -114,41 +164,55 @@ jobs:
           if [ -f "elite_trading_bot.log" ]; then
             echo "📄 Log file generated successfully"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "Last 30 lines of log:"
-            tail -n 30 elite_trading_bot.log
+            echo "Last 50 lines of log:"
+            tail -n 50 elite_trading_bot.log
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             # Check for signals in log
-            if grep -q "SIGNAL:" elite_trading_bot.log; then
-              echo "✅ Signals detected in this run!"
-              grep "SIGNAL:" elite_trading_bot.log
+            if grep -q "HIGH-CONFIDENCE SIGNAL:" elite_trading_bot.log; then
+              echo "✅ HIGH CONFIDENCE SIGNALS DETECTED!"
+              echo ""
+              grep "HIGH-CONFIDENCE SIGNAL:" elite_trading_bot.log
+              echo ""
+              
+              # Count signals
+              SIGNAL_COUNT=$(grep -c "HIGH-CONFIDENCE SIGNAL:" elite_trading_bot.log)
+              echo "🎯 Total high-confidence signals: $SIGNAL_COUNT"
+              
+              # Show signal details
+              echo ""
+              echo "Signal Details:"
+              grep -A 3 "HIGH-CONFIDENCE SIGNAL:" elite_trading_bot.log
             else
-              echo "ℹ️ No signals generated in this cycle"
+              echo "ℹ️ No 80%+ confidence signals this cycle"
+              echo "💡 Quality over quantity - waiting for premium setups"
             fi
             
             # Check for errors
-            if grep -qi "error" elite_trading_bot.log; then
-              echo "⚠️ Errors detected in log - review required"
+            if grep -qi "error" elite_trading_bot.log | grep -v "Error analyzing" | head -5; then
+              echo ""
+              echo "⚠️ Errors detected in log:"
+              grep -i "error" elite_trading_bot.log | grep -v "Error analyzing" | head -5
             fi
           else
             echo "❌ Log file not found!"
           fi
       
-      - name: Upload logs (always)
+      - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: trading-bot-logs-${{ github.run_number }}-${{ github.run_attempt }}
+          name: trading-bot-logs-${{ github.run_number }}
           path: |
             elite_trading_bot.log
             *.log
-          retention-days: 14
+          retention-days: 30
           if-no-files-found: warn
       
-      - name: Send failure notification to Telegram
+      - name: Send failure notification
         if: failure()
         run: |
-          MESSAGE="🚨 <b>Elite Trading Bot Alert</b>%0A%0A"
+          MESSAGE="🚨 <b>Elite Trading Bot v7.0 Alert</b>%0A%0A"
           MESSAGE="${MESSAGE}❌ Execution failed%0A%0A"
           MESSAGE="${MESSAGE}<b>Details:</b>%0A"
           MESSAGE="${MESSAGE}• GitHub Run: #${{ github.run_number }}%0A"
@@ -171,19 +235,37 @@ jobs:
           echo "║                    📊 EXECUTION SUMMARY                          ║"
           echo "╚══════════════════════════════════════════════════════════════════╝"
           echo ""
+          echo "Bot Version: v7.0 GitHub Actions Edition"
           echo "Run #${{ github.run_number }} - Attempt #${{ github.run_attempt }}"
           echo "Status: ${{ job.status }}"
           echo "Completed: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
           echo ""
+          
           if [ "${{ job.status }}" = "success" ]; then
             echo "✅ Bot executed successfully"
-            echo "📊 Check Telegram for signals"
-            echo "📄 Logs uploaded as artifact"
+            echo "📊 Check Telegram for any 80%+ signals"
+            echo "📄 Logs saved as artifacts"
+            echo ""
+            echo "Signals sent with:"
+            echo "  • Entry prices & position sizes"
+            echo "  • Stop loss levels"
+            echo "  • 3-level take profit targets"
+            echo "  • Risk-reward ratios"
+            echo "  • Complete trade management plans"
           else
-            echo "❌ Bot execution had issues"
+            echo "❌ Bot execution encountered issues"
             echo "🔍 Review logs in GitHub Actions artifacts"
             echo "📱 Failure notification sent to Telegram"
           fi
+          
+          echo ""
+          echo "v7.0 Active Features:"
+          echo "  ✅ Multi-indicator confluence analysis"
+          echo "  ✅ 80%+ confidence threshold"
+          echo "  ✅ Risk-based position sizing"
+          echo "  ✅ 3-level TP system (50%/30%/20%)"
+          echo "  ✅ Breakeven automation strategy"
+          echo "  ✅ Volume & momentum confirmation"
           echo ""
           echo "Next scheduled run: Top of next hour"
           echo "Manual trigger: Available in Actions tab"
