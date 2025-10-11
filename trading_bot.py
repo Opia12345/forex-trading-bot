@@ -911,8 +911,8 @@ def main():
     deriv_app_id = os.getenv('DERIV_APP_ID', '1089')
     
     # Trading parameters
-    account_balance = float(os.getenv('ACCOUNT_BALANCE', 500.0))
-    risk_percent = float(os.getenv('RISK_PERCENT', 2.0))
+    account_balance = float(os.getenv('ACCOUNT_BALANCE') or 500)
+risk_percent = float(os.getenv('RISK_PERCENT') or 2.0)
     
     # Validation
     if not telegram_token or not main_chat_id or not simple_chat_id:
