@@ -144,7 +144,7 @@ jobs:
           fi
           
           # Run the bot (should be named trading_bot_v7.py or similar)
-          python trading_bot_v7.py
+          python trading_bot.py
           EXIT_CODE=$?
           
           echo ""
