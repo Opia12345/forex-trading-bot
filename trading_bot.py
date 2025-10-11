@@ -911,7 +911,7 @@ def main():
     deriv_app_id = os.getenv('DERIV_APP_ID', '1089')
     
     # Trading parameters
-    account_balance = float(os.getenv('ACCOUNT_BALANCE', '500'))
+    account_balance = float(os.getenv('ACCOUNT_BALANCE', '500.0'))
     risk_percent = float(os.getenv('RISK_PERCENT', '2.0'))
     
     # Validation
