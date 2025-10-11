@@ -138,12 +138,7 @@ jobs:
           echo "🤖 Starting Elite Trading Bot v7.0..."
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
-          # Rename the bot file if it has a different name
-          if [ -f "elite_trading_bot_mt5.py" ]; then
-            mv elite_trading_bot_mt5.py trading_bot_v7.py
-          fi
-          
-          # Run the bot (should be named trading_bot_v7.py or similar)
+          # Run the bot (should be named trading_bot.py or similar)
           python trading_bot.py
           EXIT_CODE=$?
           
