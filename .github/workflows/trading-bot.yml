@@ -1,10 +1,10 @@
-name: Elite Trading Bot v7.0 - Signal Generator
+name: Elite Trading Bot v7.0 - Signal Generator (WebSocket Edition)
 
 on:
   schedule:
     # Runs every hour at minute 0
     - cron: '0 * * * *'
-  
+
   # Allows manual trigger from Actions tab
   workflow_dispatch:
     inputs:
@@ -22,37 +22,40 @@ on:
 jobs:
   run-trading-bot:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
-      
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas numpy requests python-dateutil pytz
+          pip install pandas numpy requests python-dateutil pytz websockets
+          echo "✅ Installed packages:"
+          pip list | grep -E "pandas|numpy|requests|pytz|websockets"
       
       - name: Display bot configuration
         run: |
           echo "╔══════════════════════════════════════════════════════════════════╗"
-          echo "║         🚀 Elite Trading Bot v7.0 - SIGNAL GENERATOR            ║"
+          echo "║      🚀 Elite Trading Bot v7.0 - WEBSOCKET SIGNAL GENERATOR     ║"
           echo "╚══════════════════════════════════════════════════════════════════╝"
           echo ""
           echo "Configuration:"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "  Python Version:    $(python --version)"
           echo "  Mode:              Signal Generation Only"
+          echo "  Connection:        WebSocket (Deriv API)"
           echo "  Symbols:           XAUUSD (Gold), BTCUSD (Bitcoin)"
           echo "  Strategy:          Multi-Indicator Confluence v7.0"
           echo "  Timeframe:         1 Hour"
           echo "  Min Confidence:    80% (HIGH QUALITY ONLY)"
-          echo "  Data Source:       Deriv API (Real-time)"
+          echo "  Data Source:       Deriv WebSocket API (Real-time)"
           echo "  Account Balance:   \$${ACCOUNT_BALANCE:-500}"
           echo "  Risk Per Trade:    ${RISK_PERCENT:-2.0}%"
           echo "  Frequency:         Every hour (on the hour)"
@@ -61,6 +64,7 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
           echo "✨ v7.0 NEW Features:"
+          echo "  ✅ WebSocket connection for reliable data"
           echo "  ✅ Advanced multi-indicator analysis (9+ indicators)"
           echo "  ✅ EMA, RSI, MACD, Bollinger Bands, Stochastic"
           echo "  ✅ ADX, Supertrend, Volume & Momentum"
@@ -109,18 +113,26 @@ jobs:
           if [ -n "${{ secrets.DERIV_APP_ID }}" ]; then
             echo "✅ DERIV_APP_ID configured"
           else
-            echo "ℹ️ DERIV_APP_ID not set, using default"
+            echo "ℹ️ DERIV_APP_ID not set, using default: 1089"
           fi
       
       - name: Check network connectivity
         run: |
           echo "Testing network connectivity..."
           
-          # Test Deriv API
-          if curl -s -o /dev/null -w "%{http_code}" https://api.deriv.com | grep -q "200\|301\|302"; then
-            echo "✅ Deriv API reachable"
+          # Test Deriv WebSocket endpoint
+          echo "Testing Deriv WebSocket API..."
+          if curl -s -o /dev/null -w "%{http_code}" https://ws.derivws.com | grep -q "200\|400\|426"; then
+            echo "✅ Deriv WebSocket endpoint reachable"
           else
-            echo "⚠️ Deriv API unreachable - may affect data quality"
+            echo "⚠️ Deriv WebSocket endpoint unreachable - may affect data quality"
+          fi
+          
+          # Test Deriv HTTP API as fallback
+          if curl -s -o /dev/null -w "%{http_code}" https://api.deriv.com | grep -q "200\|301\|302"; then
+            echo "✅ Deriv HTTP API reachable"
+          else
+            echo "⚠️ Deriv HTTP API unreachable"
           fi
           
           # Test Telegram API
@@ -137,6 +149,38 @@ jobs:
             echo "⚠️ Forex Factory unreachable - news monitoring may be limited"
           fi
       
+      - name: Test WebSocket connection
+        run: |
+          echo "Testing WebSocket connection with Python..."
+          python3 -c "
+import asyncio
+import websockets
+import json
+
+async def test_connection():
+    try:
+        uri = 'wss://ws.derivws.com/websockets/v3?app_id=1089'
+        async with websockets.connect(uri, ping_interval=30) as websocket:
+            # Send ping request
+            await websocket.send(json.dumps({'ping': 1}))
+            response = await asyncio.wait_for(websocket.recv(), timeout=10)
+            data = json.loads(response)
+            if 'ping' in data:
+                print('✅ WebSocket connection successful!')
+                print(f'   Server response: {data}')
+                return True
+            else:
+                print('⚠️ Unexpected response from server')
+                return False
+    except Exception as e:
+        print(f'❌ WebSocket test failed: {e}')
+        return False
+
+# Run the test
+result = asyncio.run(test_connection())
+exit(0 if result else 1)
+          " || echo "⚠️ WebSocket test failed but continuing..."
+      
       - name: Run elite trading bot v7.0
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -149,34 +193,42 @@ jobs:
           PYTHONUNBUFFERED: "1"
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🤖 Starting Elite Trading Bot v7.0..."
+          echo "🤖 Starting Elite Trading Bot v7.0 (WebSocket Edition)..."
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "Features enabled:"
+          echo "  🔌 WebSocket connection: YES"
           echo "  ⏰ Market hours validation: YES"
           echo "  📰 News monitoring: $CHECK_NEWS"
           echo "  🚫 Weekend Gold trading: BLOCKED"
           echo ""
           
-          # The bot file should be named trading_bot_v7.py
-          if [ ! -f "trading_bot_v7.py" ]; then
-            echo "⚠️ trading_bot_v7.py not found, checking alternatives..."
-            
-            if [ -f "trading_bot.py" ]; then
-              echo "✅ Found trading_bot.py, using that"
-              python trading_bot.py
-            elif [ -f "elite_trading_bot.py" ]; then
-              echo "✅ Found elite_trading_bot.py, using that"
-              python elite_trading_bot.py
-            else
-              echo "❌ ERROR: No bot file found!"
-              echo "Expected: trading_bot_v7.py, trading_bot.py, or elite_trading_bot.py"
-              exit 1
-            fi
-          else
-            echo "✅ Running trading_bot_v7.py"
-            python trading_bot_v7.py
+          # Find and run the bot file
+          BOT_FILE=""
+          
+          if [ -f "trading_bot_v7.py" ]; then
+            BOT_FILE="trading_bot_v7.py"
+          elif [ -f "elite_trading_bot_v7.py" ]; then
+            BOT_FILE="elite_trading_bot_v7.py"
+          elif [ -f "trading_bot.py" ]; then
+            BOT_FILE="trading_bot.py"
+          elif [ -f "elite_trading_bot.py" ]; then
+            BOT_FILE="elite_trading_bot.py"
           fi
           
+          if [ -z "$BOT_FILE" ]; then
+            echo "❌ ERROR: No bot file found!"
+            echo "Expected files: trading_bot_v7.py, elite_trading_bot_v7.py, trading_bot.py, or elite_trading_bot.py"
+            echo ""
+            echo "Available Python files:"
+            ls -la *.py 2>/dev/null || echo "No Python files found"
+            exit 1
+          fi
+          
+          echo "✅ Found bot file: $BOT_FILE"
+          echo "Starting execution..."
+          echo ""
+          
+          python "$BOT_FILE"
           EXIT_CODE=$?
           
           echo ""
@@ -189,7 +241,7 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           exit $EXIT_CODE
         timeout-minutes: 15
-      
+
       - name: Check log file
         if: always()
         run: |
@@ -199,6 +251,13 @@ jobs:
             echo "Last 80 lines of log:"
             tail -n 80 elite_trading_bot.log
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Check for WebSocket connection status
+            if grep -q "WebSocket" elite_trading_bot.log; then
+              echo ""
+              echo "🔌 WebSocket Connection Status:"
+              grep -i "websocket\|ws\|fetching.*candles" elite_trading_bot.log | tail -5
+            fi
             
             # Check for signals in log
             if grep -q "HIGH-CONFIDENCE SIGNAL:" elite_trading_bot.log; then
@@ -246,6 +305,13 @@ jobs:
               grep -i "news" elite_trading_bot.log | head -5
             fi
             
+            # Check for data fetching
+            if grep -q "Fetched.*candles" elite_trading_bot.log; then
+              echo ""
+              echo "📊 Data Fetching Status:"
+              grep "Fetched.*candles\|Latest price\|Time range" elite_trading_bot.log | tail -10
+            fi
+            
             # Check for errors (excluding normal ones)
             ERROR_COUNT=$(grep -i "error" elite_trading_bot.log | grep -v "Error analyzing" | wc -l)
             if [ $ERROR_COUNT -gt 0 ]; then
@@ -267,7 +333,7 @@ jobs:
             *.log
           retention-days: 30
           if-no-files-found: warn
-      
+
       - name: Send failure notification
         if: failure()
         run: |
@@ -294,7 +360,7 @@ jobs:
           echo "║                    📊 EXECUTION SUMMARY                          ║"
           echo "╚══════════════════════════════════════════════════════════════════╝"
           echo ""
-          echo "Bot Version: v7.0 GitHub Actions Edition"
+          echo "Bot Version: v7.0 WebSocket Edition"
           echo "Run #${{ github.run_number }} - Attempt #${{ github.run_attempt }}"
           echo "Status: ${{ job.status }}"
           echo "Completed: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
@@ -314,6 +380,7 @@ jobs:
             echo "📄 Logs saved as artifacts"
             echo ""
             echo "What was checked:"
+            echo "  🔌 WebSocket connection to Deriv API"
             echo "  ⏰ Market hours (Gold weekend blocking)"
             echo "  📰 High-impact news events"
             echo "  📊 Technical indicator confluence"
@@ -333,6 +400,7 @@ jobs:
           
           echo ""
           echo "v7.0 Active Features:"
+          echo "  ✅ WebSocket real-time data (reliable & fast)"
           echo "  ✅ Multi-indicator confluence analysis (9+ indicators)"
           echo "  ✅ 80%+ confidence threshold (quality over quantity)"
           echo "  ✅ Market hours validation (no weekend Gold)"
