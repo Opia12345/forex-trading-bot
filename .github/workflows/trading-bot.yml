@@ -5,15 +5,6 @@ on:
     # Runs every hour at minute 0
     - cron: '0 * * * *'
   
-  # Push trigger to keep workflow active (GitHub disables after 60 days of no repo activity)
-  push:
-    branches:
-      - main
-      - master
-    paths:
-      - '.github/workflows/*.yml'
-      - '*.py'
-  
   # Allows manual trigger from Actions tab
   workflow_dispatch:
     inputs:
