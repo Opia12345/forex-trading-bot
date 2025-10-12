@@ -1,10 +1,19 @@
-name: Elite Trading Bot v7.0 - Signal Generator (WebSocket Edition)
+name: Elite Trading Bot v7.0 - Signal Generator
 
 on:
   schedule:
     # Runs every hour at minute 0
     - cron: '0 * * * *'
-
+  
+  # Push trigger to keep workflow active (GitHub disables after 60 days of no repo activity)
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - '.github/workflows/*.yml'
+      - '*.py'
+  
   # Allows manual trigger from Actions tab
   workflow_dispatch:
     inputs:
@@ -19,9 +28,17 @@ on:
         default: 'true'
         type: boolean
 
+# Ensure workflow has necessary permissions
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   run-trading-bot:
     runs-on: ubuntu-latest
+    
+    # Prevent workflow from being disabled
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -33,10 +50,25 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
+      - name: Create requirements.txt if not exists
+        run: |
+          if [ ! -f requirements.txt ]; then
+            cat > requirements.txt << EOF
+          pandas>=2.0.0
+          numpy>=1.24.0
+          requests>=2.31.0
+          python-dateutil>=2.8.2
+          pytz>=2023.3
+          websockets>=12.0
+          EOF
+            echo "✅ Created requirements.txt"
+          fi
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas numpy requests python-dateutil pytz websockets
+          pip install -r requirements.txt
+          echo ""
           echo "✅ Installed packages:"
           pip list | grep -E "pandas|numpy|requests|pytz|websockets"
       
@@ -46,6 +78,7 @@ jobs:
           echo "║      🚀 Elite Trading Bot v7.0 - WEBSOCKET SIGNAL GENERATOR     ║"
           echo "╚══════════════════════════════════════════════════════════════════╝"
           echo ""
+          echo "Trigger: ${{ github.event_name }}"
           echo "Configuration:"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "  Python Version:    $(python --version)"
@@ -61,9 +94,10 @@ jobs:
           echo "  Frequency:         Every hour (on the hour)"
           echo "  Execution Time:    $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
           echo "  GitHub Run:        #${{ github.run_number }}"
+          echo "  Repository:        ${{ github.repository }}"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
-          echo "✨ v7.0 NEW Features:"
+          echo "✨ v7.0 Features:"
           echo "  ✅ WebSocket connection for reliable data"
           echo "  ✅ Advanced multi-indicator analysis (9+ indicators)"
           echo "  ✅ EMA, RSI, MACD, Bollinger Bands, Stochastic"
@@ -75,7 +109,6 @@ jobs:
           echo "  ✅ 3-level take profit system (50%/30%/20%)"
           echo "  ✅ Complete trade management plans"
           echo "  ✅ Duplicate signal prevention"
-          echo "  ✅ R:R ratio calculation"
           echo ""
       
       - name: Verify secrets
@@ -84,6 +117,7 @@ jobs:
           
           if [ -z "${{ secrets.TELEGRAM_BOT_TOKEN }}" ]; then
             echo "❌ ERROR: TELEGRAM_BOT_TOKEN secret not set!"
+            echo "Go to: Settings → Secrets and variables → Actions → New repository secret"
             exit 1
           fi
           if [ -z "${{ secrets.MAIN_CHAT_ID }}" ]; then
@@ -180,7 +214,7 @@ async def test_connection():
 result = asyncio.run(test_connection())
 exit(0 if result else 1)
           " || echo "⚠️ WebSocket test failed but continuing..."
-      
+
       - name: Run elite trading bot v7.0
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -195,6 +229,7 @@ exit(0 if result else 1)
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "🤖 Starting Elite Trading Bot v7.0 (WebSocket Edition)..."
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Triggered by: ${{ github.event_name }}"
           echo "Features enabled:"
           echo "  🔌 WebSocket connection: YES"
           echo "  ⏰ Market hours validation: YES"
@@ -213,14 +248,18 @@ exit(0 if result else 1)
             BOT_FILE="trading_bot.py"
           elif [ -f "elite_trading_bot.py" ]; then
             BOT_FILE="elite_trading_bot.py"
+          elif [ -f "bot.py" ]; then
+            BOT_FILE="bot.py"
           fi
           
           if [ -z "$BOT_FILE" ]; then
             echo "❌ ERROR: No bot file found!"
-            echo "Expected files: trading_bot_v7.py, elite_trading_bot_v7.py, trading_bot.py, or elite_trading_bot.py"
+            echo "Expected files: trading_bot_v7.py, elite_trading_bot_v7.py, trading_bot.py, elite_trading_bot.py, or bot.py"
             echo ""
             echo "Available Python files:"
             ls -la *.py 2>/dev/null || echo "No Python files found"
+            echo ""
+            echo "📝 Please create one of the expected bot files and push to repository"
             exit 1
           fi
           
@@ -341,6 +380,7 @@ exit(0 if result else 1)
           MESSAGE="${MESSAGE}❌ Execution failed%0A%0A"
           MESSAGE="${MESSAGE}<b>Details:</b>%0A"
           MESSAGE="${MESSAGE}• GitHub Run: #${{ github.run_number }}%0A"
+          MESSAGE="${MESSAGE}• Trigger: ${{ github.event_name }}%0A"
           MESSAGE="${MESSAGE}• Time: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')%0A"
           MESSAGE="${MESSAGE}• Branch: ${{ github.ref_name }}%0A%0A"
           MESSAGE="${MESSAGE}<i>Check GitHub Actions logs for details</i>%0A"
@@ -361,6 +401,7 @@ exit(0 if result else 1)
           echo "╚══════════════════════════════════════════════════════════════════╝"
           echo ""
           echo "Bot Version: v7.0 WebSocket Edition"
+          echo "Trigger: ${{ github.event_name }}"
           echo "Run #${{ github.run_number }} - Attempt #${{ github.run_attempt }}"
           echo "Status: ${{ job.status }}"
           echo "Completed: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
@@ -377,7 +418,7 @@ exit(0 if result else 1)
           if [ "${{ job.status }}" = "success" ]; then
             echo "✅ Bot executed successfully"
             echo "📊 Check Telegram for any 80%+ signals"
-            echo "📄 Logs saved as artifacts"
+            echo "📄 Logs saved as artifacts (30 days)"
             echo ""
             echo "What was checked:"
             echo "  🔌 WebSocket connection to Deriv API"
@@ -399,19 +440,20 @@ exit(0 if result else 1)
           fi
           
           echo ""
-          echo "v7.0 Active Features:"
-          echo "  ✅ WebSocket real-time data (reliable & fast)"
-          echo "  ✅ Multi-indicator confluence analysis (9+ indicators)"
-          echo "  ✅ 80%+ confidence threshold (quality over quantity)"
-          echo "  ✅ Market hours validation (no weekend Gold)"
-          echo "  ✅ High-impact news monitoring & alerts"
-          echo "  ✅ Risk-based position sizing"
-          echo "  ✅ 3-level TP system (50%/30%/20%)"
-          echo "  ✅ Breakeven automation strategy"
-          echo "  ✅ Volume & momentum confirmation"
-          echo "  ✅ Duplicate signal prevention"
+          echo "🔄 Scheduled Runs:"
+          echo "  • Every hour at :00 minutes (UTC)"
+          echo "  • Schedule: 0 * * * * (cron)"
+          echo "  • Next run: Top of next hour"
           echo ""
-          echo "Next scheduled run: Top of next hour"
-          echo "Manual trigger: Available in Actions tab"
-          echo "  → Toggle 'check_news' to disable news monitoring"
+          echo "📌 Manual Trigger:"
+          echo "  • Go to Actions tab"
+          echo "  • Select this workflow"
+          echo "  • Click 'Run workflow'"
+          echo "  • Toggle options as needed"
+          echo ""
+          echo "⚠️ Important Notes:"
+          echo "  • GitHub may delay scheduled runs by 5-15 minutes"
+          echo "  • Workflows disabled after 60 days of no repo activity"
+          echo "  • Push commits occasionally to keep active"
+          echo "  • First scheduled run may take 1-2 hours to start"
           echo ""
