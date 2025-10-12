@@ -1,5 +1,6 @@
 name: Elite Trading Bot v7.0 - Signal Generator
 
+
 on:
   schedule:
     # Runs every hour at minute 0
