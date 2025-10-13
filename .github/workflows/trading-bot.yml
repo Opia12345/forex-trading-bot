@@ -1,37 +1,18 @@
-name: Elite Trading Bot v8.0 - Institutional Grade Signal Generator
+name: Elite Trading Bot v8.0 - Scheduled Signal Generator
 
 on:
+  # Runs every hour at minute 0 (UTC)
   schedule:
-    # Runs every hour at minute 0 (UTC)
     - cron: '0 * * * *'
-  
-  # Manual trigger from Actions tab
-  workflow_dispatch:
-    inputs:
-      debug_mode:
-        description: 'Enable debug logging'
-        required: false
-        default: 'false'
-        type: boolean
-      check_news:
-        description: 'Enable high-impact news monitoring'
-        required: false
-        default: 'true'
-        type: boolean
-      min_confidence:
-        description: 'Minimum signal confidence (80-100)'
-        required: false
-        default: '80'
-        type: string
 
 # Workflow permissions
 permissions:
   contents: read
-  actions: read
 
 jobs:
   run-trading-bot:
     runs-on: ubuntu-latest
+    # Maximum time for the job before GitHub cancels it
     timeout-minutes: 20
 
     steps:
@@ -44,8 +25,9 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Create requirements.txt
+      - name: Create requirements.txt and Install dependencies
         run: |
+          # Create temporary requirements file
           cat > requirements.txt << 'EOF'
           pandas>=2.1.0
           numpy>=1.26.0
@@ -54,528 +36,77 @@ jobs:
           pytz>=2023.3
           websockets>=12.0
           EOF
-          echo "✅ Created requirements.txt"
-
-      - name: Install dependencies
-        run: |
+          
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          echo ""
-          echo "✅ Installed packages:"
-          pip list | grep -E "pandas|numpy|requests|pytz|websockets"
+          echo "✅ Dependencies installed."
       
-      - name: Display bot configuration
-        run: |
-          echo "╔══════════════════════════════════════════════════════════════════╗"
-          echo "║   🚀 Elite Trading Bot v8.0 - INSTITUTIONAL GRADE SIGNALS       ║"
-          echo "╚══════════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "Trigger: ${{ github.event_name }}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "  Manual trigger by: ${{ github.actor }}"
-            echo "  Debug mode: ${{ github.event.inputs.debug_mode }}"
-            echo "  News check: ${{ github.event.inputs.check_news }}"
-            echo "  Min confidence: ${{ github.event.inputs.min_confidence }}%"
-          fi
-          echo ""
-          echo "Configuration:"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  Python Version:    $(python --version)"
-          echo "  Mode:              Signal Generation Only"
-          echo "  Connection:        WebSocket (Deriv API)"
-          echo "  Symbols:           XAUUSD (Gold), BTCUSD (Bitcoin)"
-          echo "  Strategy:          Institutional Multi-Indicator v8.0"
-          echo "  Timeframe:         1 Hour"
-          echo "  Min Confidence:    ${MIN_CONFIDENCE:-80}% (STRICT)"
-          echo "  Data Source:       Deriv WebSocket API (Real-time)"
-          echo "  Account Balance:   \$${ACCOUNT_BALANCE:-500}"
-          echo "  Risk Per Trade:    ${RISK_PERCENT:-2.0}%"
-          echo "  Frequency:         Every hour (on the hour)"
-          echo "  Execution Time:    $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
-          echo "  GitHub Run:        #${{ github.run_number }}"
-          echo "  Repository:        ${{ github.repository }}"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo ""
-          echo "✨ v8.0 INSTITUTIONAL-GRADE FEATURES:"
-          echo "  ✅ WebSocket with retry logic (3 attempts)"
-          echo "  ✅ 10 technical indicators with weighted scoring"
-          echo "  ✅ EMA, RSI, MACD, BB, Stochastic, ADX, Supertrend"
-          echo "  ✅ Volume, momentum & trend confirmation"
-          echo "  ✅ 80%+ confidence threshold (STRICT)"
-          echo "  ✅ Market hours validation (NO Gold weekends)"
-          echo "  ✅ HIGH-IMPACT news blocking (1-hour buffer)"
-          echo "  ✅ Small account protection (<\$100)"
-          echo "  ✅ Dynamic position sizing & risk management"
-          echo "  ✅ 3-level TP system (50%/30%/20% closure)"
-          echo "  ✅ Complete trade management plans"
-          echo "  ✅ Duplicate signal prevention (2-hour window)"
-          echo "  ✅ Professional Telegram notifications"
-          echo "  ✅ Comprehensive error handling & logging"
-          echo ""
-      
-      - name: Verify secrets
+      - name: Verify minimum required secrets
         run: |
           echo "Checking required secrets..."
-          
-          # Required secrets
-          if [ -z "${{ secrets.TELEGRAM_BOT_TOKEN }}" ]; then
-            echo "❌ ERROR: TELEGRAM_BOT_TOKEN secret not set!"
-            echo "Go to: Settings → Secrets and variables → Actions → New repository secret"
+          # Check critical secrets (Telegram is essential for signaling)
+          if [ -z "${{ secrets.TELEGRAM_BOT_TOKEN }}" ] || [ -z "${{ secrets.MAIN_CHAT_ID }}" ] || [ -z "${{ secrets.SIMPLE_CHAT_ID }}" ]; then
+            echo "❌ ERROR: One or more critical Telegram secrets (BOT_TOKEN, MAIN_CHAT_ID, SIMPLE_CHAT_ID) are missing!"
             exit 1
           fi
-          if [ -z "${{ secrets.MAIN_CHAT_ID }}" ]; then
-            echo "❌ ERROR: MAIN_CHAT_ID secret not set!"
-            exit 1
-          fi
-          if [ -z "${{ secrets.SIMPLE_CHAT_ID }}" ]; then
-            echo "❌ ERROR: SIMPLE_CHAT_ID secret not set!"
-            exit 1
-          fi
-          
-          echo "✅ All required secrets configured"
-          echo ""
-          
-          # Optional secrets
-          echo "Optional Configuration:"
-          if [ -n "${{ secrets.ACCOUNT_BALANCE }}" ]; then
-            echo "  ✅ ACCOUNT_BALANCE: \$${{ secrets.ACCOUNT_BALANCE }}"
-          else
-            echo "  ℹ️  ACCOUNT_BALANCE: \$500 (default)"
-          fi
-          
-          if [ -n "${{ secrets.RISK_PERCENT }}" ]; then
-            echo "  ✅ RISK_PERCENT: ${{ secrets.RISK_PERCENT }}%"
-          else
-            echo "  ℹ️  RISK_PERCENT: 2.0% (default)"
-          fi
-          
-          if [ -n "${{ secrets.MIN_CONFIDENCE }}" ]; then
-            echo "  ✅ MIN_CONFIDENCE: ${{ secrets.MIN_CONFIDENCE }}%"
-          else
-            echo "  ℹ️  MIN_CONFIDENCE: 80% (default)"
-          fi
-          
-          if [ -n "${{ secrets.DERIV_APP_ID }}" ]; then
-            echo "  ✅ DERIV_APP_ID: Configured"
-          else
-            echo "  ℹ️  DERIV_APP_ID: 1089 (default)"
-          fi
-      
-      - name: Check network connectivity
-        run: |
-          echo "Testing network connectivity..."
-          echo ""
-          
-          # Test Deriv WebSocket endpoint
-          echo "🔌 Testing Deriv WebSocket API..."
-          if curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://ws.derivws.com | grep -q "200\|400\|426"; then
-            echo "   ✅ Deriv WebSocket endpoint reachable"
-          else
-            echo "   ⚠️  Deriv WebSocket endpoint unreachable - may affect data quality"
-          fi
-          
-          # Test Telegram API
-          echo "📱 Testing Telegram API..."
-          if curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://api.telegram.org | grep -q "200\|301\|302"; then
-            echo "   ✅ Telegram API reachable"
-          else
-            echo "   ❌ Telegram API unreachable - notifications will fail!"
-            exit 1
-          fi
-          
-          # Test Forex Factory (for news)
-          echo "📰 Testing Forex Factory news feed..."
-          if curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://nfs.faireconomy.media/ff_calendar_thisweek.json | grep -q "200"; then
-            echo "   ✅ Forex Factory news feed reachable"
-          else
-            echo "   ⚠️  Forex Factory unreachable - news monitoring may be limited"
-          fi
-          
-          echo ""
-          echo "✅ Network connectivity check complete"
-      
-      - name: Test WebSocket connection
-        run: |
-          echo "🔌 Testing WebSocket connection with Python..."
-          echo ""
-          python3 -c "
-import asyncio
-import websockets
-import json
-from datetime import datetime
+          echo "✅ Critical secrets configured."
 
-async def test_connection():
-    try:
-        uri = 'wss://ws.derivws.com/websockets/v3?app_id=1089'
-        print(f'   Connecting to: {uri}')
-        
-        async with websockets.connect(uri, ping_interval=30, ping_timeout=10) as websocket:
-            print('   Connection established')
-            
-            # Send ping request
-            await websocket.send(json.dumps({'ping': 1}))
-            print('   Ping sent')
-            
-            # Wait for response
-            response = await asyncio.wait_for(websocket.recv(), timeout=10)
-            data = json.loads(response)
-            
-            if 'ping' in data:
-                print('   ✅ WebSocket connection successful!')
-                print(f'   Server time: {datetime.now().strftime(\"%Y-%m-%d %H:%M:%S UTC\")}')
-                return True
-            else:
-                print('   ⚠️  Unexpected response from server')
-                print(f'   Response: {data}')
-                return False
-                
-    except asyncio.TimeoutError:
-        print('   ❌ WebSocket timeout after 10 seconds')
-        return False
-    except Exception as e:
-        print(f'   ❌ WebSocket test failed: {e}')
-        return False
-
-# Run the test
-print('')
-result = asyncio.run(test_connection())
-print('')
-exit(0 if result else 1)
-          " || echo "⚠️ WebSocket test failed but continuing (may work in production)..."
-
-      - name: Check if it's weekend (Gold market closed)
-        id: weekend_check
+      - name: Check if it's weekend (Gold market note)
         run: |
           DAY=$(date -u +%u)  # 1=Monday, 6=Saturday, 7=Sunday
           HOUR=$(date -u +%H)
-          
           echo "Current UTC time: $(date -u '+%Y-%m-%d %H:%M:%S')"
-          echo "Day of week: $DAY (1=Mon, 6=Sat, 7=Sun)"
-          echo "Hour: $HOUR"
-          echo ""
-          
-          if [ $DAY -eq 6 ]; then
-            echo "📅 It's Saturday - XAUUSD (Gold) market is CLOSED"
-            echo "   Only BTCUSD (Bitcoin) signals possible"
-          elif [ $DAY -eq 7 ]; then
-            if [ $HOUR -lt 22 ]; then
-              echo "📅 It's Sunday before 22:00 UTC - XAUUSD (Gold) market is CLOSED"
-              echo "   Gold opens at Sunday 22:00 UTC"
-              echo "   Only BTCUSD (Bitcoin) signals possible"
-            else
-              echo "✅ Sunday evening - XAUUSD (Gold) market is OPEN"
-            fi
-          elif [ $DAY -eq 5 ] && [ $HOUR -ge 22 ]; then
-            echo "📅 It's Friday after 22:00 UTC - XAUUSD (Gold) market is CLOSING"
-            echo "   Gold closes at Friday 22:00 UTC"
-            echo "   Only BTCUSD (Bitcoin) signals possible"
+          if [ $DAY -eq 6 ] || ([ $DAY -eq 7 ] && [ $HOUR -lt 22 ]) || ([ $DAY -eq 5 ] && [ $HOUR -ge 22 ]); then
+            echo "📅 Weekend/Off-Hours detected. XAUUSD (Gold) market may be closed. Bot should focus on 24/7 assets like BTCUSD."
           else
-            echo "✅ Weekday - All markets open for trading"
+            echo "✅ Weekday trading hours. All markets open."
           fi
 
       - name: Run elite trading bot v8.0
         env:
+          # Pass required secrets
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           MAIN_CHAT_ID: ${{ secrets.MAIN_CHAT_ID }}
           SIMPLE_CHAT_ID: ${{ secrets.SIMPLE_CHAT_ID }}
+          PYTHONUNBUFFERED: "1"
+          
+          # Pass optional secrets/defaults
           DERIV_APP_ID: ${{ secrets.DERIV_APP_ID }}
           ACCOUNT_BALANCE: ${{ secrets.ACCOUNT_BALANCE }}
           RISK_PERCENT: ${{ secrets.RISK_PERCENT }}
-          MIN_CONFIDENCE: ${{ github.event.inputs.min_confidence || secrets.MIN_CONFIDENCE || '80' }}
-          CHECK_NEWS: ${{ github.event.inputs.check_news || 'true' }}
-          PYTHONUNBUFFERED: "1"
+          MIN_CONFIDENCE: ${{ secrets.MIN_CONFIDENCE || '80' }}
+          # Hardcode CHECK_NEWS to true since manual input is removed
+          CHECK_NEWS: 'true' 
+        
         run: |
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🤖 Starting Elite Trading Bot v8.0 - INSTITUTIONAL GRADE"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "Triggered by: ${{ github.event_name }}"
-          echo ""
-          echo "Features enabled:"
-          echo "  🔌 WebSocket connection: YES (with retry)"
-          echo "  ⏰ Market hours validation: YES"
-          echo "  📰 News monitoring: $CHECK_NEWS"
-          echo "  🚫 Weekend Gold trading: BLOCKED"
-          echo "  🎯 Min confidence: ${MIN_CONFIDENCE}%"
-          echo "  💰 Account balance: \$${ACCOUNT_BALANCE:-500}"
-          echo "  📊 Risk per trade: ${RISK_PERCENT:-2.0}%"
-          echo ""
-          
-          # Find the bot file
-          BOT_FILE=""
-          
-          # Check for v8 files first
-          if [ -f "elite_trading_bot_v8.py" ]; then
-            BOT_FILE="elite_trading_bot_v8.py"
-          elif [ -f "trading_bot_v8.py" ]; then
-            BOT_FILE="trading_bot_v8.py"
-          # Fall back to v7 files
-          elif [ -f "elite_trading_bot_v7.py" ]; then
-            BOT_FILE="elite_trading_bot_v7.py"
-          elif [ -f "trading_bot_v7.py" ]; then
-            BOT_FILE="trading_bot_v7.py"
-          # Generic names
-          elif [ -f "elite_trading_bot.py" ]; then
-            BOT_FILE="elite_trading_bot.py"
-          elif [ -f "trading_bot.py" ]; then
-            BOT_FILE="trading_bot.py"
-          elif [ -f "bot.py" ]; then
-            BOT_FILE="bot.py"
-          fi
+          BOT_FILE=$(ls *trading_bot*.py 2>/dev/null | head -n 1 || ls *bot.py 2>/dev/null | head -n 1)
           
           if [ -z "$BOT_FILE" ]; then
-            echo "❌ ERROR: No bot file found!"
-            echo ""
-            echo "Expected files (in priority order):"
-            echo "  1. elite_trading_bot_v8.py"
-            echo "  2. trading_bot_v8.py"
-            echo "  3. elite_trading_bot_v7.py"
-            echo "  4. trading_bot_v7.py"
-            echo "  5. elite_trading_bot.py"
-            echo "  6. trading_bot.py"
-            echo "  7. bot.py"
-            echo ""
-            echo "Available Python files:"
-            ls -la *.py 2>/dev/null || echo "  No Python files found"
-            echo ""
-            echo "📝 Action required:"
-            echo "  1. Create the bot file with one of the expected names"
-            echo "  2. Push to your repository"
-            echo "  3. Re-run this workflow"
+            echo "❌ ERROR: No trading bot file found (e.g., trading_bot.py, elite_trading_bot_v8.py)."
             exit 1
           fi
           
-          echo "✅ Found bot file: $BOT_FILE"
-          echo "   Starting execution..."
-          echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo ""
+          echo "🤖 Starting $BOT_FILE (Min confidence: ${MIN_CONFIDENCE:-80}%)"
           
-          # Run the bot
+          # Run the bot file
           python "$BOT_FILE"
-          EXIT_CODE=$?
-          
-          echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          if [ $EXIT_CODE -eq 0 ]; then
-            echo "✅ Bot execution completed successfully"
-          else
-            echo "❌ Bot execution failed with exit code: $EXIT_CODE"
-          fi
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          
-          exit $EXIT_CODE
-        timeout-minutes: 15
-
-      - name: Analyze log file
-        if: always()
-        run: |
-          if [ -f "elite_trading_bot.log" ]; then
-            echo "📄 Log file generated successfully"
-            echo ""
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "EXECUTION LOG (Last 100 lines)"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            tail -n 100 elite_trading_bot.log
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo ""
-            
-            # Check for signals
-            if grep -q "INSTITUTIONAL-GRADE SIGNAL GENERATED" elite_trading_bot.log || \
-               grep -q "HIGH-CONFIDENCE SIGNAL" elite_trading_bot.log; then
-              echo "✅ HIGH CONFIDENCE SIGNALS DETECTED!"
-              echo ""
-              
-              # Count signals
-              SIGNAL_COUNT=$(grep -c "INSTITUTIONAL-GRADE SIGNAL GENERATED\|HIGH-CONFIDENCE SIGNAL" elite_trading_bot.log || echo "0")
-              echo "🎯 Total signals: $SIGNAL_COUNT"
-              echo ""
-              
-              # Show signal summaries
-              echo "Signal Details:"
-              grep -A 8 "INSTITUTIONAL-GRADE SIGNAL GENERATED\|HIGH-CONFIDENCE SIGNAL" elite_trading_bot.log || true
-              echo ""
-            else
-              echo "ℹ️  No 80%+ confidence signals this cycle"
-              echo ""
-              
-              # Analyze why no signals
-              if grep -q "Weekend\|Market closed\|market is CLOSED" elite_trading_bot.log; then
-                echo "📅 Reason: Market closed (weekend or off-hours)"
-                grep -i "weekend\|market closed\|market is closed" elite_trading_bot.log | head -3
-              elif grep -q "HIGH-IMPACT NEWS\|news detected" elite_trading_bot.log; then
-                echo "📰 Reason: High-impact news event nearby"
-                grep -i "high-impact\|news detected" elite_trading_bot.log | head -3
-              elif grep -q "Below.*threshold" elite_trading_bot.log; then
-                echo "📊 Reason: Confidence below threshold"
-                grep -i "below.*threshold" elite_trading_bot.log | head -3
-              fi
-              
-              echo ""
-              echo "💡 Quality over quantity - waiting for premium institutional setups"
-            fi
-            echo ""
-            
-            # WebSocket status
-            if grep -q "WebSocket\|Fetched.*candles" elite_trading_bot.log; then
-              echo "🔌 WebSocket Connection Status:"
-              grep -i "websocket\|fetched.*candles\|latest.*price" elite_trading_bot.log | tail -8
-              echo ""
-            fi
-            
-            # Market status
-            if grep -q "market\|Forex\|Crypto" elite_trading_bot.log; then
-              echo "📊 Market Status:"
-              grep -iE "analyzing|market open|market closed|forex|crypto" elite_trading_bot.log | tail -6
-              echo ""
-            fi
-            
-            # News monitoring
-            if grep -q "news" elite_trading_bot.log; then
-              echo "📰 News Monitoring:"
-              grep -i "news\|news events" elite_trading_bot.log | head -5
-              echo ""
-            fi
-            
-            # Check for errors
-            ERROR_COUNT=$(grep -ic "error" elite_trading_bot.log | grep -v "0" || echo "0")
-            if [ "$ERROR_COUNT" -gt 0 ]; then
-              echo "⚠️  Errors detected in log ($ERROR_COUNT):"
-              grep -i "error\|exception\|failed" elite_trading_bot.log | tail -10
-              echo ""
-            fi
-            
-          else
-            echo "❌ Log file not found!"
-            echo "   Expected: elite_trading_bot.log"
-            echo ""
-            echo "Available log files:"
-            ls -la *.log 2>/dev/null || echo "  No log files found"
-          fi
+        timeout-minutes: 15 # Set a 15-minute timeout for the main execution step
       
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: trading-bot-logs-run-${{ github.run_number }}
-          path: |
-            elite_trading_bot.log
-            *.log
-          retention-days: 30
-          if-no-files-found: warn
-
       - name: Send failure notification
-        if: failure()
+        if: failure() && secrets.TELEGRAM_BOT_TOKEN != '' && secrets.MAIN_CHAT_ID != ''
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           MAIN_CHAT_ID: ${{ secrets.MAIN_CHAT_ID }}
         run: |
-          MESSAGE="🚨 <b>Elite Trading Bot v8.0 Alert</b>%0A%0A"
-          MESSAGE="${MESSAGE}❌ <b>Execution Failed</b>%0A%0A"
-          MESSAGE="${MESSAGE}<b>Details:</b>%0A"
-          MESSAGE="${MESSAGE}• GitHub Run: #${{ github.run_number }}%0A"
-          MESSAGE="${MESSAGE}• Trigger: ${{ github.event_name }}%0A"
-          MESSAGE="${MESSAGE}• Time: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')%0A"
-          MESSAGE="${MESSAGE}• Branch: ${{ github.ref_name }}%0A"
-          MESSAGE="${MESSAGE}• Actor: ${{ github.actor }}%0A%0A"
-          MESSAGE="${MESSAGE}<i>⚠️ Check GitHub Actions logs for details</i>%0A%0A"
+          # Simplified failure message
+          MESSAGE="🚨 <b>Elite Trading Bot v8.0 Failure</b>%0A%0A"
+          MESSAGE="${MESSAGE}❌ Execution failed.%0A"
+          MESSAGE="${MESSAGE}<b>Run:</b> #${{ github.run_number }}%0A"
+          MESSAGE="${MESSAGE}<b>Time:</b> $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')%0A%0A"
           MESSAGE="${MESSAGE}🔗 https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           
-          # Try to send notification (don't fail if it doesn't work)
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d "chat_id=${MAIN_CHAT_ID}" \
             -d "text=${MESSAGE}" \
             -d "parse_mode=HTML" \
             -d "disable_web_page_preview=true" || echo "⚠️ Failed to send Telegram notification"
-      
-      - name: Execution summary
-        if: always()
-        run: |
-          echo ""
-          echo "╔══════════════════════════════════════════════════════════════════╗"
-          echo "║              📊 EXECUTION SUMMARY - v8.0                         ║"
-          echo "╚══════════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "Bot Version: v8.0 INSTITUTIONAL GRADE"
-          echo "Trigger: ${{ github.event_name }}"
-          echo "Run: #${{ github.run_number }} (Attempt #${{ github.run_attempt }})"
-          echo "Status: ${{ job.status }}"
-          echo "Completed: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
-          echo ""
-          
-          # Day/time info
-          DAY=$(date -u +%u)
-          HOUR=$(date -u +%H)
-          DAY_NAME=$(date -u +%A)
-          
-          echo "📅 Current: $DAY_NAME, Hour $HOUR UTC"
-          
-          if [ $DAY -eq 6 ] || [ $DAY -eq 7 ]; then
-            echo "   Weekend: Gold (XAUUSD) market CLOSED"
-            echo "   Bitcoin (BTCUSD) still active 24/7"
-          elif [ $DAY -eq 5 ] && [ $HOUR -ge 22 ]; then
-            echo "   Friday evening: Gold market CLOSING"
-          else
-            echo "   Weekday: All markets OPEN"
-          fi
-          echo ""
-          
-          if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ Bot executed successfully"
-            echo ""
-            echo "What was analyzed:"
-            echo "  🔌 WebSocket connection to Deriv API"
-            echo "  ⏰ Market hours (Gold weekend blocking)"
-            echo "  📰 High-impact news events (1-hour buffer)"
-            echo "  📊 10 technical indicators with confluence"
-            echo "  🎯 Minimum ${MIN_CONFIDENCE:-80}% confidence threshold"
-            echo "  💰 Risk-optimized position sizing"
-            echo ""
-            echo "📱 Check Telegram for signals"
-            echo "📄 Logs saved as artifacts (30 days)"
-            echo ""
-          else
-            echo "❌ Bot execution encountered issues"
-            echo ""
-            echo "Troubleshooting:"
-            echo "  1. Check logs in GitHub Actions artifacts"
-            echo "  2. Verify all secrets are set correctly"
-            echo "  3. Check if bot file exists in repo"
-            echo "  4. Review error messages above"
-            echo "  5. Try manual trigger to test"
-            echo ""
-            echo "📱 Failure notification sent to Telegram"
-          fi
-          
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🔄 SCHEDULED RUNS"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  Schedule: Every hour at :00 minutes (UTC)"
-          echo "  Cron: 0 * * * *"
-          echo "  Next run: Top of next hour"
-          echo ""
-          echo "  Note: GitHub may delay runs by 5-15 minutes"
-          echo "        First run may take 1-2 hours to start"
-          echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🎯 MANUAL TRIGGER"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  1. Go to Actions tab"
-          echo "  2. Select 'Elite Trading Bot v8.0'"
-          echo "  3. Click 'Run workflow'"
-          echo "  4. Configure options:"
-          echo "     • Debug mode: Enable extra logging"
-          echo "     • Check news: Monitor high-impact events"
-          echo "     • Min confidence: Set threshold (80-100)"
-          echo "  5. Click 'Run workflow' button"
-          echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "⚠️ IMPORTANT NOTES"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  • GitHub disables workflows after 60 days of no activity"
-          echo "  • Push commits occasionally to keep workflow active"
-          echo "  • Check Actions tab to see if workflow is enabled"
-          echo "  • Logs are kept for 30 days (configurable)"
-          echo "  • Only 80%+ confidence signals are sent"
-          echo "  • Gold trading blocked on weekends automatically"
-          echo "  • High-impact news blocks trading (1-hour buffer)"
-          echo ""
