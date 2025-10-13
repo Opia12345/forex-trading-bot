@@ -67,50 +67,50 @@ jobs:
       - name: Display bot configuration
         run: |
           echo "╔══════════════════════════════════════════════════════════════════╗"
-          echo "║   🚀 Elite Trading Bot v8.0 - INSTITUTIONAL GRADE SIGNALS       ║"
+          echo "║   🚀 Elite Trading Bot v8.0 - INSTITUTIONAL GRADE SIGNALS       ║"
           echo "╚══════════════════════════════════════════════════════════════════╝"
           echo ""
           echo "Trigger: ${{ github.event_name }}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "  Manual trigger by: ${{ github.actor }}"
-            echo "  Debug mode: ${{ github.event.inputs.debug_mode }}"
-            echo "  News check: ${{ github.event.inputs.check_news }}"
-            echo "  Min confidence: ${{ github.event.inputs.min_confidence }}%"
+            echo "  Manual trigger by: ${{ github.actor }}"
+            echo "  Debug mode: ${{ github.event.inputs.debug_mode }}"
+            echo "  News check: ${{ github.event.inputs.check_news }}"
+            echo "  Min confidence: ${{ github.event.inputs.min_confidence }}%"
           fi
           echo ""
           echo "Configuration:"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  Python Version:    $(python --version)"
-          echo "  Mode:              Signal Generation Only"
-          echo "  Connection:        WebSocket (Deriv API)"
-          echo "  Symbols:           XAUUSD (Gold), BTCUSD (Bitcoin)"
-          echo "  Strategy:          Institutional Multi-Indicator v8.0"
-          echo "  Timeframe:         1 Hour"
-          echo "  Min Confidence:    ${MIN_CONFIDENCE:-80}% (STRICT)"
-          echo "  Data Source:       Deriv WebSocket API (Real-time)"
-          echo "  Account Balance:   \$${ACCOUNT_BALANCE:-500}"
-          echo "  Risk Per Trade:    ${RISK_PERCENT:-2.0}%"
-          echo "  Frequency:         Every hour (on the hour)"
-          echo "  Execution Time:    $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
-          echo "  GitHub Run:        #${{ github.run_number }}"
-          echo "  Repository:        ${{ github.repository }}"
+          echo "  Python Version:    $(python --version)"
+          echo "  Mode:              Signal Generation Only"
+          echo "  Connection:        WebSocket (Deriv API)"
+          echo "  Symbols:           XAUUSD (Gold), BTCUSD (Bitcoin)"
+          echo "  Strategy:          Institutional Multi-Indicator v8.0"
+          echo "  Timeframe:         1 Hour"
+          echo "  Min Confidence:    ${MIN_CONFIDENCE:-80}% (STRICT)"
+          echo "  Data Source:       Deriv WebSocket API (Real-time)"
+          echo "  Account Balance:   \$${ACCOUNT_BALANCE:-500}"
+          echo "  Risk Per Trade:    ${RISK_PERCENT:-2.0}%"
+          echo "  Frequency:         Every hour (on the hour)"
+          echo "  Execution Time:    $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "  GitHub Run:        #${{ github.run_number }}"
+          echo "  Repository:        ${{ github.repository }}"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
           echo "✨ v8.0 INSTITUTIONAL-GRADE FEATURES:"
-          echo "  ✅ WebSocket with retry logic (3 attempts)"
-          echo "  ✅ 10 technical indicators with weighted scoring"
-          echo "  ✅ EMA, RSI, MACD, BB, Stochastic, ADX, Supertrend"
-          echo "  ✅ Volume, momentum & trend confirmation"
-          echo "  ✅ 80%+ confidence threshold (STRICT)"
-          echo "  ✅ Market hours validation (NO Gold weekends)"
-          echo "  ✅ HIGH-IMPACT news blocking (1-hour buffer)"
-          echo "  ✅ Small account protection (<\$100)"
-          echo "  ✅ Dynamic position sizing & risk management"
-          echo "  ✅ 3-level TP system (50%/30%/20% closure)"
-          echo "  ✅ Complete trade management plans"
-          echo "  ✅ Duplicate signal prevention (2-hour window)"
-          echo "  ✅ Professional Telegram notifications"
-          echo "  ✅ Comprehensive error handling & logging"
+          echo "  ✅ WebSocket with retry logic (3 attempts)"
+          echo "  ✅ 10 technical indicators with weighted scoring"
+          echo "  ✅ EMA, RSI, MACD, BB, Stochastic, ADX, Supertrend"
+          echo "  ✅ Volume, momentum & trend confirmation"
+          echo "  ✅ 80%+ confidence threshold (STRICT)"
+          echo "  ✅ Market hours validation (NO Gold weekends)"
+          echo "  ✅ HIGH-IMPACT news blocking (1-hour buffer)"
+          echo "  ✅ Small account protection (<\$100)"
+          echo "  ✅ Dynamic position sizing & risk management"
+          echo "  ✅ 3-level TP system (50%/30%/20% closure)"
+          echo "  ✅ Complete trade management plans"
+          echo "  ✅ Duplicate signal prevention (2-hour window)"
+          echo "  ✅ Professional Telegram notifications"
+          echo "  ✅ Comprehensive error handling & logging"
           echo ""
       
       - name: Verify secrets
@@ -138,27 +138,27 @@ jobs:
           # Optional secrets
           echo "Optional Configuration:"
           if [ -n "${{ secrets.ACCOUNT_BALANCE }}" ]; then
-            echo "  ✅ ACCOUNT_BALANCE: \$${{ secrets.ACCOUNT_BALANCE }}"
+            echo "  ✅ ACCOUNT_BALANCE: \$${{ secrets.ACCOUNT_BALANCE }}"
           else
-            echo "  ℹ️  ACCOUNT_BALANCE: \$500 (default)"
+            echo "  ℹ️  ACCOUNT_BALANCE: \$500 (default)"
           fi
           
           if [ -n "${{ secrets.RISK_PERCENT }}" ]; then
-            echo "  ✅ RISK_PERCENT: ${{ secrets.RISK_PERCENT }}%"
+            echo "  ✅ RISK_PERCENT: ${{ secrets.RISK_PERCENT }}%"
           else
-            echo "  ℹ️  RISK_PERCENT: 2.0% (default)"
+            echo "  ℹ️  RISK_PERCENT: 2.0% (default)"
           fi
           
           if [ -n "${{ secrets.MIN_CONFIDENCE }}" ]; then
-            echo "  ✅ MIN_CONFIDENCE: ${{ secrets.MIN_CONFIDENCE }}%"
+            echo "  ✅ MIN_CONFIDENCE: ${{ secrets.MIN_CONFIDENCE }}%"
           else
-            echo "  ℹ️  MIN_CONFIDENCE: 80% (default)"
+            echo "  ℹ️  MIN_CONFIDENCE: 80% (default)"
           fi
           
           if [ -n "${{ secrets.DERIV_APP_ID }}" ]; then
-            echo "  ✅ DERIV_APP_ID: Configured"
+            echo "  ✅ DERIV_APP_ID: Configured"
           else
-            echo "  ℹ️  DERIV_APP_ID: 1089 (default)"
+            echo "  ℹ️  DERIV_APP_ID: 1089 (default)"
           fi
       
       - name: Check network connectivity
@@ -169,26 +169,26 @@ jobs:
           # Test Deriv WebSocket endpoint
           echo "🔌 Testing Deriv WebSocket API..."
           if curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://ws.derivws.com | grep -q "200\|400\|426"; then
-            echo "   ✅ Deriv WebSocket endpoint reachable"
+            echo "   ✅ Deriv WebSocket endpoint reachable"
           else
-            echo "   ⚠️  Deriv WebSocket endpoint unreachable - may affect data quality"
+            echo "   ⚠️  Deriv WebSocket endpoint unreachable - may affect data quality"
           fi
           
           # Test Telegram API
           echo "📱 Testing Telegram API..."
           if curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://api.telegram.org | grep -q "200\|301\|302"; then
-            echo "   ✅ Telegram API reachable"
+            echo "   ✅ Telegram API reachable"
           else
-            echo "   ❌ Telegram API unreachable - notifications will fail!"
+            echo "   ❌ Telegram API unreachable - notifications will fail!"
             exit 1
           fi
           
           # Test Forex Factory (for news)
           echo "📰 Testing Forex Factory news feed..."
           if curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://nfs.faireconomy.media/ff_calendar_thisweek.json | grep -q "200"; then
-            echo "   ✅ Forex Factory news feed reachable"
+            echo "   ✅ Forex Factory news feed reachable"
           else
-            echo "   ⚠️  Forex Factory unreachable - news monitoring may be limited"
+            echo "   ⚠️  Forex Factory unreachable - news monitoring may be limited"
           fi
           
           echo ""
@@ -199,41 +199,41 @@ jobs:
           echo "🔌 Testing WebSocket connection with Python..."
           echo ""
           python3 -c "
-          import asyncio
-          import websockets
-          import json
-          from datetime import datetime
+import asyncio
+import websockets
+import json
+from datetime import datetime
 
 async def test_connection():
     try:
         uri = 'wss://ws.derivws.com/websockets/v3?app_id=1089'
-        print(f'   Connecting to: {uri}')
+        print(f'   Connecting to: {uri}')
         
         async with websockets.connect(uri, ping_interval=30, ping_timeout=10) as websocket:
-            print('   Connection established')
+            print('   Connection established')
             
             # Send ping request
             await websocket.send(json.dumps({'ping': 1}))
-            print('   Ping sent')
+            print('   Ping sent')
             
             # Wait for response
             response = await asyncio.wait_for(websocket.recv(), timeout=10)
             data = json.loads(response)
             
             if 'ping' in data:
-                print('   ✅ WebSocket connection successful!')
-                print(f'   Server time: {datetime.now().strftime(\"%Y-%m-%d %H:%M:%S UTC\")}')
+                print('   ✅ WebSocket connection successful!')
+                print(f'   Server time: {datetime.now().strftime(\"%Y-%m-%d %H:%M:%S UTC\")}')
                 return True
             else:
-                print('   ⚠️  Unexpected response from server')
-                print(f'   Response: {data}')
+                print('   ⚠️  Unexpected response from server')
+                print(f'   Response: {data}')
                 return False
                 
     except asyncio.TimeoutError:
-        print('   ❌ WebSocket timeout after 10 seconds')
+        print('   ❌ WebSocket timeout after 10 seconds')
         return False
     except Exception as e:
-        print(f'   ❌ WebSocket test failed: {e}')
+        print(f'   ❌ WebSocket test failed: {e}')
         return False
 
 # Run the test
@@ -246,7 +246,7 @@ exit(0 if result else 1)
       - name: Check if it's weekend (Gold market closed)
         id: weekend_check
         run: |
-          DAY=$(date -u +%u)  # 1=Monday, 6=Saturday, 7=Sunday
+          DAY=$(date -u +%u)  # 1=Monday, 6=Saturday, 7=Sunday
           HOUR=$(date -u +%H)
           
           echo "Current UTC time: $(date -u '+%Y-%m-%d %H:%M:%S')"
@@ -256,19 +256,19 @@ exit(0 if result else 1)
           
           if [ $DAY -eq 6 ]; then
             echo "📅 It's Saturday - XAUUSD (Gold) market is CLOSED"
-            echo "   Only BTCUSD (Bitcoin) signals possible"
+            echo "   Only BTCUSD (Bitcoin) signals possible"
           elif [ $DAY -eq 7 ]; then
             if [ $HOUR -lt 22 ]; then
               echo "📅 It's Sunday before 22:00 UTC - XAUUSD (Gold) market is CLOSED"
-              echo "   Gold opens at Sunday 22:00 UTC"
-              echo "   Only BTCUSD (Bitcoin) signals possible"
+              echo "   Gold opens at Sunday 22:00 UTC"
+              echo "   Only BTCUSD (Bitcoin) signals possible"
             else
               echo "✅ Sunday evening - XAUUSD (Gold) market is OPEN"
             fi
           elif [ $DAY -eq 5 ] && [ $HOUR -ge 22 ]; then
             echo "📅 It's Friday after 22:00 UTC - XAUUSD (Gold) market is CLOSING"
-            echo "   Gold closes at Friday 22:00 UTC"
-            echo "   Only BTCUSD (Bitcoin) signals possible"
+            echo "   Gold closes at Friday 22:00 UTC"
+            echo "   Only BTCUSD (Bitcoin) signals possible"
           else
             echo "✅ Weekday - All markets open for trading"
           fi
@@ -291,13 +291,13 @@ exit(0 if result else 1)
           echo "Triggered by: ${{ github.event_name }}"
           echo ""
           echo "Features enabled:"
-          echo "  🔌 WebSocket connection: YES (with retry)"
-          echo "  ⏰ Market hours validation: YES"
-          echo "  📰 News monitoring: $CHECK_NEWS"
-          echo "  🚫 Weekend Gold trading: BLOCKED"
-          echo "  🎯 Min confidence: ${MIN_CONFIDENCE}%"
-          echo "  💰 Account balance: \$${ACCOUNT_BALANCE:-500}"
-          echo "  📊 Risk per trade: ${RISK_PERCENT:-2.0}%"
+          echo "  🔌 WebSocket connection: YES (with retry)"
+          echo "  ⏰ Market hours validation: YES"
+          echo "  📰 News monitoring: $CHECK_NEWS"
+          echo "  🚫 Weekend Gold trading: BLOCKED"
+          echo "  🎯 Min confidence: ${MIN_CONFIDENCE}%"
+          echo "  💰 Account balance: \$${ACCOUNT_BALANCE:-500}"
+          echo "  📊 Risk per trade: ${RISK_PERCENT:-2.0}%"
           echo ""
           
           # Find the bot file
@@ -326,26 +326,26 @@ exit(0 if result else 1)
             echo "❌ ERROR: No bot file found!"
             echo ""
             echo "Expected files (in priority order):"
-            echo "  1. elite_trading_bot_v8.py"
-            echo "  2. trading_bot_v8.py"
-            echo "  3. elite_trading_bot_v7.py"
-            echo "  4. trading_bot_v7.py"
-            echo "  5. elite_trading_bot.py"
-            echo "  6. trading_bot.py"
-            echo "  7. bot.py"
+            echo "  1. elite_trading_bot_v8.py"
+            echo "  2. trading_bot_v8.py"
+            echo "  3. elite_trading_bot_v7.py"
+            echo "  4. trading_bot_v7.py"
+            echo "  5. elite_trading_bot.py"
+            echo "  6. trading_bot.py"
+            echo "  7. bot.py"
             echo ""
             echo "Available Python files:"
-            ls -la *.py 2>/dev/null || echo "  No Python files found"
+            ls -la *.py 2>/dev/null || echo "  No Python files found"
             echo ""
             echo "📝 Action required:"
-            echo "  1. Create the bot file with one of the expected names"
-            echo "  2. Push to your repository"
-            echo "  3. Re-run this workflow"
+            echo "  1. Create the bot file with one of the expected names"
+            echo "  2. Push to your repository"
+            echo "  3. Re-run this workflow"
             exit 1
           fi
           
           echo "✅ Found bot file: $BOT_FILE"
-          echo "   Starting execution..."
+          echo "   Starting execution..."
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
@@ -395,7 +395,7 @@ exit(0 if result else 1)
               grep -A 8 "INSTITUTIONAL-GRADE SIGNAL GENERATED\|HIGH-CONFIDENCE SIGNAL" elite_trading_bot.log || true
               echo ""
             else
-              echo "ℹ️  No 80%+ confidence signals this cycle"
+              echo "ℹ️  No 80%+ confidence signals this cycle"
               echo ""
               
               # Analyze why no signals
@@ -439,17 +439,17 @@ exit(0 if result else 1)
             # Check for errors
             ERROR_COUNT=$(grep -ic "error" elite_trading_bot.log | grep -v "0" || echo "0")
             if [ "$ERROR_COUNT" -gt 0 ]; then
-              echo "⚠️  Errors detected in log ($ERROR_COUNT):"
+              echo "⚠️  Errors detected in log ($ERROR_COUNT):"
               grep -i "error\|exception\|failed" elite_trading_bot.log | tail -10
               echo ""
             fi
             
           else
             echo "❌ Log file not found!"
-            echo "   Expected: elite_trading_bot.log"
+            echo "   Expected: elite_trading_bot.log"
             echo ""
             echo "Available log files:"
-            ls -la *.log 2>/dev/null || echo "  No log files found"
+            ls -la *.log 2>/dev/null || echo "  No log files found"
           fi
       
       - name: Upload logs
@@ -492,7 +492,7 @@ exit(0 if result else 1)
         run: |
           echo ""
           echo "╔══════════════════════════════════════════════════════════════════╗"
-          echo "║              📊 EXECUTION SUMMARY - v8.0                         ║"
+          echo "║              📊 EXECUTION SUMMARY - v8.0                         ║"
           echo "╚══════════════════════════════════════════════════════════════════╝"
           echo ""
           echo "Bot Version: v8.0 INSTITUTIONAL GRADE"
@@ -510,12 +510,12 @@ exit(0 if result else 1)
           echo "📅 Current: $DAY_NAME, Hour $HOUR UTC"
           
           if [ $DAY -eq 6 ] || [ $DAY -eq 7 ]; then
-            echo "   Weekend: Gold (XAUUSD) market CLOSED"
-            echo "   Bitcoin (BTCUSD) still active 24/7"
+            echo "   Weekend: Gold (XAUUSD) market CLOSED"
+            echo "   Bitcoin (BTCUSD) still active 24/7"
           elif [ $DAY -eq 5 ] && [ $HOUR -ge 22 ]; then
-            echo "   Friday evening: Gold market CLOSING"
+            echo "   Friday evening: Gold market CLOSING"
           else
-            echo "   Weekday: All markets OPEN"
+            echo "   Weekday: All markets OPEN"
           fi
           echo ""
           
@@ -523,12 +523,12 @@ exit(0 if result else 1)
             echo "✅ Bot executed successfully"
             echo ""
             echo "What was analyzed:"
-            echo "  🔌 WebSocket connection to Deriv API"
-            echo "  ⏰ Market hours (Gold weekend blocking)"
-            echo "  📰 High-impact news events (1-hour buffer)"
-            echo "  📊 10 technical indicators with confluence"
-            echo "  🎯 Minimum ${MIN_CONFIDENCE:-80}% confidence threshold"
-            echo "  💰 Risk-optimized position sizing"
+            echo "  🔌 WebSocket connection to Deriv API"
+            echo "  ⏰ Market hours (Gold weekend blocking)"
+            echo "  📰 High-impact news events (1-hour buffer)"
+            echo "  📊 10 technical indicators with confluence"
+            echo "  🎯 Minimum ${MIN_CONFIDENCE:-80}% confidence threshold"
+            echo "  💰 Risk-optimized position sizing"
             echo ""
             echo "📱 Check Telegram for signals"
             echo "📄 Logs saved as artifacts (30 days)"
@@ -537,11 +537,11 @@ exit(0 if result else 1)
             echo "❌ Bot execution encountered issues"
             echo ""
             echo "Troubleshooting:"
-            echo "  1. Check logs in GitHub Actions artifacts"
-            echo "  2. Verify all secrets are set correctly"
-            echo "  3. Check if bot file exists in repo"
-            echo "  4. Review error messages above"
-            echo "  5. Try manual trigger to test"
+            echo "  1. Check logs in GitHub Actions artifacts"
+            echo "  2. Verify all secrets are set correctly"
+            echo "  3. Check if bot file exists in repo"
+            echo "  4. Review error messages above"
+            echo "  5. Try manual trigger to test"
             echo ""
             echo "📱 Failure notification sent to Telegram"
           fi
@@ -549,33 +549,33 @@ exit(0 if result else 1)
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "🔄 SCHEDULED RUNS"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  Schedule: Every hour at :00 minutes (UTC)"
-          echo "  Cron: 0 * * * *"
-          echo "  Next run: Top of next hour"
+          echo "  Schedule: Every hour at :00 minutes (UTC)"
+          echo "  Cron: 0 * * * *"
+          echo "  Next run: Top of next hour"
           echo ""
-          echo "  Note: GitHub may delay runs by 5-15 minutes"
-          echo "        First run may take 1-2 hours to start"
+          echo "  Note: GitHub may delay runs by 5-15 minutes"
+          echo "        First run may take 1-2 hours to start"
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "🎯 MANUAL TRIGGER"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  1. Go to Actions tab"
-          echo "  2. Select 'Elite Trading Bot v8.0'"
-          echo "  3. Click 'Run workflow'"
-          echo "  4. Configure options:"
-          echo "     • Debug mode: Enable extra logging"
-          echo "     • Check news: Monitor high-impact events"
-          echo "     • Min confidence: Set threshold (80-100)"
-          echo "  5. Click 'Run workflow' button"
+          echo "  1. Go to Actions tab"
+          echo "  2. Select 'Elite Trading Bot v8.0'"
+          echo "  3. Click 'Run workflow'"
+          echo "  4. Configure options:"
+          echo "     • Debug mode: Enable extra logging"
+          echo "     • Check news: Monitor high-impact events"
+          echo "     • Min confidence: Set threshold (80-100)"
+          echo "  5. Click 'Run workflow' button"
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "⚠️ IMPORTANT NOTES"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  • GitHub disables workflows after 60 days of no activity"
-          echo "  • Push commits occasionally to keep workflow active"
-          echo "  • Check Actions tab to see if workflow is enabled"
-          echo "  • Logs are kept for 30 days (configurable)"
-          echo "  • Only 80%+ confidence signals are sent"
-          echo "  • Gold trading blocked on weekends automatically"
-          echo "  • High-impact news blocks trading (1-hour buffer)"
+          echo "  • GitHub disables workflows after 60 days of no activity"
+          echo "  • Push commits occasionally to keep workflow active"
+          echo "  • Check Actions tab to see if workflow is enabled"
+          echo "  • Logs are kept for 30 days (configurable)"
+          echo "  • Only 80%+ confidence signals are sent"
+          echo "  • Gold trading blocked on weekends automatically"
+          echo "  • High-impact news blocks trading (1-hour buffer)"
           echo ""
