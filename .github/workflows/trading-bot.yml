@@ -199,10 +199,10 @@ jobs:
           echo "🔌 Testing WebSocket connection with Python..."
           echo ""
           python3 -c "
-import asyncio
-import websockets
-import json
-from datetime import datetime
+          import asyncio
+          import websockets
+          import json
+          from datetime import datetime
 
 async def test_connection():
     try:
