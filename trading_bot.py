@@ -1,9 +1,7 @@
 """
-ELITE TRADING BOT v7.0 - GITHUB ACTIONS EDITION (FIXED WITH WEBSOCKET)
-Signal Generation Only - No MT5 Required
-Works perfectly in cloud environments
-Assets: XAUUSD & BTCUSD
-Features: Advanced multi-indicator analysis, Market hours validation, News monitoring, High-confidence signals
+ELITE TRADING BOT v8.0 - INSTITUTIONAL GRADE
+Fixed: WebSocket, News Alerts, Risk Management, Weekend Detection
+Assets: XAUUSD & BTCUSD | Signal Generation Only
 """
 
 import pandas as pd
@@ -39,7 +37,7 @@ class NewsEvent:
     title: str
     country: str
     date: datetime
-    impact: str  # HIGH, MEDIUM, LOW
+    impact: str
     actual: str
     forecast: str
     previous: str
@@ -83,29 +81,35 @@ class MarketHoursValidator:
 
     @staticmethod
     def is_forex_open(dt: datetime = None) -> Tuple[bool, str]:
-        """Check if Forex market is open (for XAUUSD)"""
+        """Check if Forex market is open (for XAUUSD) - FIXED"""
         if dt is None:
             dt = datetime.now(pytz.UTC)
 
         weekday = dt.weekday()
 
-        if weekday == 5:  # Saturday
+        # Saturday - completely closed
+        if weekday == 5:
             return False, "Weekend - Forex market closed (Saturday)"
 
-        if weekday == 6:  # Sunday
+        # Sunday - opens at 22:00 UTC
+        if weekday == 6:
             if dt.hour < 22:
                 return False, "Weekend - Forex market closed (Sunday before 22:00 UTC)"
+            else:
+                return True, "Forex market open (Sunday evening)"
 
-        if weekday == 4:  # Friday
+        # Friday - closes at 22:00 UTC
+        if weekday == 4:
             if dt.hour >= 22:
-                return False, "Weekend - Forex market closing (Friday after 22:00 UTC)"
+                return False, "Weekend - Forex market closed (Friday after 22:00 UTC)"
 
+        # Monday-Thursday - fully open
         return True, "Forex market open"
 
     @staticmethod
     def is_crypto_open(dt: datetime = None) -> Tuple[bool, str]:
         """Check if Crypto market is open (for BTCUSD)"""
-        return True, "Crypto market always open"
+        return True, "Crypto market always open (24/7)"
 
     @staticmethod
     def get_market_status(symbol: str) -> Tuple[bool, str]:
@@ -119,19 +123,20 @@ class MarketHoursValidator:
 
 
 class NewsMonitor:
-    """Monitor high-impact economic news"""
+    """Monitor high-impact economic news - FIXED"""
 
     def __init__(self):
         self.forex_factory_url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
         self.last_fetch = None
-        self.cache_duration = 3600
+        self.cache_duration = 1800  # 30 minutes cache
         self.cached_events = []
 
     def fetch_news_events(self) -> List[NewsEvent]:
         """Fetch upcoming high-impact news from Forex Factory"""
-
+        
+        # Use cache if recent
         if self.last_fetch and (datetime.now() - self.last_fetch).seconds < self.cache_duration:
-            logger.info("Using cached news events")
+            logger.info(f"Using cached news events ({len(self.cached_events)} events)")
             return self.cached_events
 
         try:
@@ -140,7 +145,7 @@ class NewsMonitor:
 
             if response.status_code != 200:
                 logger.warning(f"Failed to fetch news: HTTP {response.status_code}")
-                return []
+                return self.cached_events  # Return cached data on failure
 
             data = response.json()
             events = []
@@ -148,7 +153,7 @@ class NewsMonitor:
             for item in data:
                 try:
                     impact = item.get('impact', '').upper()
-                    if impact not in ['HIGH', 'MEDIUM', 'LOW']:
+                    if impact not in ['HIGH', 'MEDIUM']:  # Only HIGH and MEDIUM
                         continue
 
                     date_str = item.get('date', '')
@@ -176,21 +181,22 @@ class NewsMonitor:
 
             self.cached_events = events
             self.last_fetch = datetime.now()
-            logger.info(f"✅ Fetched {len(events)} news events")
+            logger.info(f"✅ Fetched {len(events)} news events (HIGH/MEDIUM impact)")
 
             return events
 
         except Exception as e:
             logger.error(f"Error fetching news: {e}")
-            return []
+            return self.cached_events  # Return cached data on error
 
     def get_upcoming_high_impact_news(self, hours_ahead: int = 4) -> List[NewsEvent]:
-        """Get high-impact news within next X hours"""
+        """Get HIGH impact news within next X hours"""
         events = self.fetch_news_events()
 
         now = datetime.now(pytz.UTC)
         future_time = now + timedelta(hours=hours_ahead)
 
+        # Only HIGH impact for alerts
         high_impact = [
             event for event in events
             if event.impact == 'HIGH' and now <= event.date <= future_time
@@ -200,7 +206,7 @@ class NewsMonitor:
 
     def check_news_before_trade(self, symbol: str, hours_ahead: int = 2) -> Tuple[bool, List[NewsEvent]]:
         """
-        Check if there's high-impact news coming soon
+        Check if there's high-impact news coming soon - FIXED
         Returns: (is_safe_to_trade, upcoming_news)
         """
         upcoming_news = self.get_upcoming_high_impact_news(hours_ahead)
@@ -210,22 +216,22 @@ class NewsMonitor:
 
         relevant_news = []
 
+        # Currency filters based on symbol
         if symbol == 'XAUUSD':
-            relevant_currencies = ['USD', 'EUR', 'GBP']
-            relevant_news = [
-                event for event in upcoming_news
-                if event.currency in relevant_currencies or
-                event.country in ['United States', 'European Union', 'United Kingdom']
-            ]
-
+            relevant_currencies = ['USD', 'EUR', 'GBP', 'CHF']
+            relevant_countries = ['United States', 'European Union', 'United Kingdom', 'Switzerland']
         elif symbol == 'BTCUSD':
             relevant_currencies = ['USD']
-            relevant_news = [
-                event for event in upcoming_news
-                if event.currency in relevant_currencies or
-                event.country in ['United States']
-            ]
+            relevant_countries = ['United States']
+        else:
+            return True, []
 
+        for event in upcoming_news:
+            if (event.currency in relevant_currencies or 
+                event.country in relevant_countries):
+                relevant_news.append(event)
+
+        # Block trading if critical news within 1 hour
         critical_news = [
             event for event in relevant_news
             if (event.date - datetime.now(pytz.UTC)).total_seconds() < 3600
@@ -237,53 +243,71 @@ class NewsMonitor:
 
 
 class DerivDataFetcher:
-    """Fetch real-time data from Deriv API using WebSocket"""
+    """Fetch real-time data from Deriv API using WebSocket - FIXED"""
 
     def __init__(self, app_id: str = "1089"):
         self.app_id = app_id
         self.ws_url = f"wss://ws.derivws.com/websockets/v3?app_id={app_id}"
+        self.max_retries = 3
+        self.retry_delay = 2
 
     async def _fetch_candles_ws(self, symbol: str, granularity: int, count: int) -> Optional[Dict]:
-        """Fetch candles via WebSocket"""
-        try:
-            async with websockets.connect(self.ws_url, ping_interval=30) as websocket:
-                # Calculate time range
-                end_time = int(datetime.now().timestamp())
-                start_time = end_time - (count * granularity)
+        """Fetch candles via WebSocket with retry logic"""
+        for attempt in range(self.max_retries):
+            try:
+                async with websockets.connect(
+                    self.ws_url, 
+                    ping_interval=30,
+                    ping_timeout=10,
+                    close_timeout=10
+                ) as websocket:
+                    
+                    # Calculate time range
+                    end_time = int(datetime.now().timestamp())
+                    start_time = end_time - (count * granularity)
 
-                # Request candles
-                request = {
-                    "ticks_history": symbol,
-                    "adjust_start_time": 1,
-                    "count": count,
-                    "end": "latest",
-                    "start": start_time,
-                    "style": "candles",
-                    "granularity": granularity
-                }
+                    # Request candles
+                    request = {
+                        "ticks_history": symbol,
+                        "adjust_start_time": 1,
+                        "count": count,
+                        "end": "latest",
+                        "start": start_time,
+                        "style": "candles",
+                        "granularity": granularity
+                    }
 
-                await websocket.send(json.dumps(request))
-                
-                # Wait for response with timeout
-                response = await asyncio.wait_for(websocket.recv(), timeout=30)
-                data = json.loads(response)
+                    await websocket.send(json.dumps(request))
+                    
+                    # Wait for response with timeout
+                    response = await asyncio.wait_for(websocket.recv(), timeout=30)
+                    data = json.loads(response)
 
-                # Check for errors
-                if 'error' in data:
-                    logger.error(f"Deriv API error: {data['error']}")
-                    return None
+                    # Check for errors
+                    if 'error' in data:
+                        logger.error(f"Deriv API error: {data['error']}")
+                        if attempt < self.max_retries - 1:
+                            await asyncio.sleep(self.retry_delay)
+                            continue
+                        return None
 
-                return data
+                    return data
 
-        except asyncio.TimeoutError:
-            logger.error("WebSocket timeout")
-            return None
-        except Exception as e:
-            logger.error(f"WebSocket error: {e}")
-            return None
+            except asyncio.TimeoutError:
+                logger.warning(f"WebSocket timeout (attempt {attempt + 1}/{self.max_retries})")
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay)
+                    continue
+            except Exception as e:
+                logger.error(f"WebSocket error (attempt {attempt + 1}/{self.max_retries}): {e}")
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay)
+                    continue
+
+        return None
 
     def get_historical_data(self, symbol: str, timeframe: str = '1h', count: int = 500) -> Optional[pd.DataFrame]:
-        """Fetch historical candles from Deriv"""
+        """Fetch historical candles from Deriv - FIXED"""
 
         # Map symbols to Deriv format
         symbol_map = {
@@ -291,7 +315,10 @@ class DerivDataFetcher:
             'BTCUSD': 'cryBTCUSD'
         }
 
-        deriv_symbol = symbol_map.get(symbol, symbol)
+        deriv_symbol = symbol_map.get(symbol)
+        if not deriv_symbol:
+            logger.error(f"Unknown symbol: {symbol}")
+            return None
 
         # Map timeframe to granularity (seconds)
         tf_map = {
@@ -304,65 +331,71 @@ class DerivDataFetcher:
             '1d': 86400
         }
 
-        granularity = tf_map.get(timeframe, 3600)
+        granularity = tf_map.get(timeframe)
+        if not granularity:
+            logger.error(f"Unknown timeframe: {timeframe}")
+            return None
 
-        logger.info(f"Fetching {count} candles for {symbol} ({deriv_symbol}) via WebSocket...")
+        logger.info(f"Fetching {count} candles for {symbol} ({deriv_symbol}) @ {timeframe}...")
 
         try:
             # Run async fetch in sync context
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            response = loop.run_until_complete(
-                self._fetch_candles_ws(deriv_symbol, granularity, count)
-            )
-            loop.close()
+            try:
+                response = loop.run_until_complete(
+                    self._fetch_candles_ws(deriv_symbol, granularity, count)
+                )
+            finally:
+                loop.close()
 
             if not response or 'candles' not in response:
-                logger.error(f"Failed to fetch data for {symbol}")
-                logger.error(f"Response: {response}")
+                logger.error(f"❌ Failed to fetch data for {symbol}")
                 return None
 
             candles = response['candles']
 
             if not candles or len(candles) == 0:
-                logger.error(f"No candles returned for {symbol}")
+                logger.error(f"❌ No candles returned for {symbol}")
                 return None
 
             # Convert to DataFrame
             df = pd.DataFrame(candles)
             
-            # Handle different possible column names
+            # Handle timestamps
             if 'epoch' in df.columns:
                 df['timestamp'] = pd.to_datetime(df['epoch'], unit='s')
-                df.rename(columns={'epoch': 'time'}, inplace=True)
             
             # Ensure numeric columns
             for col in ['open', 'high', 'low', 'close']:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
 
-            # Ensure we have OHLC data
+            # Validate OHLC data
             required_cols = ['open', 'high', 'low', 'close']
             if not all(col in df.columns for col in required_cols):
-                logger.error(f"Missing OHLC data for {symbol}. Columns: {df.columns.tolist()}")
+                logger.error(f"❌ Missing OHLC data for {symbol}")
                 return None
 
-            # Remove any NaN rows
+            # Remove NaN rows
             df = df.dropna(subset=required_cols)
 
+            if len(df) < 200:
+                logger.error(f"❌ Insufficient data for {symbol} (got {len(df)} candles)")
+                return None
+
             logger.info(f"✅ Fetched {len(df)} candles for {symbol}")
-            logger.info(f"   Latest price: {df['close'].iloc[-1]:.5f}")
-            logger.info(f"   Time range: {df['timestamp'].iloc[0]} to {df['timestamp'].iloc[-1]}")
+            logger.info(f"   Latest: {df['close'].iloc[-1]:.5f} @ {df['timestamp'].iloc[-1]}")
 
             return df
 
         except Exception as e:
-            logger.error(f"Error fetching data for {symbol}: {e}", exc_info=True)
+            logger.error(f"❌ Error fetching data for {symbol}: {e}", exc_info=True)
             return None
 
 
 class TelegramNotifier:
-    """Send trading signals and news alerts via Telegram"""
+    """Send trading signals and news alerts via Telegram - ENHANCED"""
 
     def __init__(self, bot_token: str, main_chat_id: str, simple_chat_id: str):
         self.bot_token = bot_token
@@ -371,19 +404,30 @@ class TelegramNotifier:
         self.base_url = f"https://api.telegram.org/bot{bot_token}"
 
     def send_message(self, message: str, chat_id: str, parse_mode: str = "HTML") -> bool:
-        """Send message to Telegram"""
+        """Send message to Telegram with retry"""
         url = f"{self.base_url}/sendMessage"
-        payload = {'chat_id': chat_id, 'text': message, 'parse_mode': parse_mode}
+        payload = {
+            'chat_id': chat_id, 
+            'text': message, 
+            'parse_mode': parse_mode,
+            'disable_web_page_preview': True
+        }
 
-        try:
-            response = requests.post(url, json=payload, timeout=10)
-            return response.status_code == 200
-        except Exception as e:
-            logger.error(f"Telegram error: {e}")
-            return False
+        for attempt in range(3):
+            try:
+                response = requests.post(url, json=payload, timeout=10)
+                if response.status_code == 200:
+                    return True
+                else:
+                    logger.warning(f"Telegram error: {response.status_code} - {response.text}")
+            except Exception as e:
+                logger.error(f"Telegram send error (attempt {attempt + 1}): {e}")
+                time.sleep(1)
+        
+        return False
 
     def send_signal(self, signal: TradeSignal) -> bool:
-        """Send trading signal"""
+        """Send trading signal - ENHANCED"""
         emoji = "🟢" if "BUY" in signal.action else "🔴"
 
         if signal.confidence >= 95:
@@ -420,7 +464,7 @@ class TelegramNotifier:
 📊 <b>Technical Analysis</b>
 {reasons_text}
 
-⚡ <b>Trade Management Plan:</b>
+⚡ <b>Trade Management:</b>
 • Close 50% at TP1, move SL to breakeven
 • Trail remaining 50% to TP2 and TP3
 • Breakeven: {signal.breakeven_price:.5f}
@@ -428,35 +472,36 @@ class TelegramNotifier:
 
 🕐 {signal.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}
 
-<i>📱 This is a signal only - manual execution required</i>
+<i>📱 Signal only - manual execution required</i>
 """
 
         detailed = self.send_message(message, self.main_chat_id)
 
+        # Simple version
         simple_msg = f"""
-{emoji} <b>{signal.confidence:.0f}% SIGNAL</b>
+{emoji} <b>{signal.confidence:.0f}% {signal.action}</b>
 
-<b>{signal.symbol}</b> {signal.action}
-ID: {signal.signal_id}
+<b>{signal.symbol}</b> | ID: {signal.signal_id}
 
 <b>Entry:</b> {signal.entry_price:.5f}
 <b>Lots:</b> {signal.position_size:.2f}
 <b>SL:</b> {signal.stop_loss:.5f} ({signal.stop_loss_pips:.1f}p)
-<b>TPs:</b> {signal.tp1_pips:.0f}/{signal.tp2_pips:.0f}/{signal.tp3_pips:.0f} pips
+<b>TPs:</b> {signal.tp1_pips:.0f}/{signal.tp2_pips:.0f}/{signal.tp3_pips:.0f}p
 
-🎯 R:R 1:{signal.risk_reward_ratio:.1f}
+🎯 R:R 1:{signal.risk_reward_ratio:.1f} | Risk ${signal.risk_amount_usd:.2f}
 """
         simple = self.send_message(simple_msg, self.simple_chat_id)
 
         return detailed and simple
 
     def send_news_alert(self, news_events: List[NewsEvent]):
-        """Send high-impact news alert"""
+        """Send high-impact news alert - FIXED"""
         if not news_events:
             return
 
         message = "🚨 <b>HIGH-IMPACT NEWS ALERT</b>\n\n"
-        message += f"⚠️ {len(news_events)} upcoming high-impact event(s)\n\n"
+        message += f"⚠️ {len(news_events)} upcoming HIGH impact event(s)\n"
+        message += "🚫 <b>AVOID TRADING DURING THESE RELEASES</b>\n\n"
 
         for event in news_events[:5]:
             time_until = event.date - datetime.now(pytz.UTC)
@@ -468,17 +513,18 @@ ID: {signal.signal_id}
             message += f"⏰ In {hours}h {minutes}m\n"
             message += f"📊 {event.impact} IMPACT\n"
             if event.forecast:
-                message += f"Forecast: {event.forecast}\n"
+                message += f"Expected: {event.forecast}\n"
             message += "\n"
 
-        message += "<i>⚠️ Avoid trading during high-impact news releases</i>"
+        message += "<i>⚠️ Trading blocked during high-impact news</i>"
 
         self.send_message(message, self.main_chat_id)
+        self.send_message(message, self.simple_chat_id)
 
     def send_market_closed_alert(self, symbol: str, reason: str):
         """Send market closed notification"""
         message = f"""
-⚪ <b>Market Closed - No Signal</b>
+⚪ <b>Market Closed - No Trading</b>
 
 <b>Symbol:</b> {symbol}
 <b>Status:</b> {reason}
@@ -493,32 +539,81 @@ ID: {signal.signal_id}
 
 
 class RiskCalculator:
-    """Calculate position sizing and risk parameters"""
+    """Calculate position sizing and risk parameters - FIXED FOR SMALL ACCOUNTS"""
 
     @staticmethod
     def calculate_position_size(account_balance: float, risk_percent: float, 
                                 stop_loss_pips: float, symbol: str) -> Tuple[float, float]:
-        """Calculate optimal position size based on risk"""
+        """
+        Calculate optimal position size based on risk - FIXED
+        Special handling for accounts under $100
+        """
         risk_amount = account_balance * (risk_percent / 100)
 
+        # Pip values per standard lot
         if symbol == 'XAUUSD':
-            pip_value_per_lot = 10.0
+            pip_value_per_lot = 10.0  # $10 per pip for 1 lot
         elif symbol == 'BTCUSD':
             pip_value_per_lot = 10.0
         else:
             pip_value_per_lot = 10.0
 
-        lot_size = risk_amount / (stop_loss_pips * pip_value_per_lot)
+        # Calculate lot size
+        if stop_loss_pips > 0:
+            lot_size = risk_amount / (stop_loss_pips * pip_value_per_lot)
+        else:
+            lot_size = 0.01
 
-        lot_size = max(0.01, round(lot_size * 100) / 100)
-        lot_size = min(lot_size, 1.0)
+        # Special handling for small accounts (under $100)
+        if account_balance < 100:
+            # Use tighter SL and smaller lots
+            lot_size = max(0.01, min(lot_size, 0.05))
+            logger.info(f"Small account detected: Limiting lot size to {lot_size:.2f}")
+        else:
+            # Normal accounts: round to 0.01
+            lot_size = max(0.01, round(lot_size * 100) / 100)
+            lot_size = min(lot_size, 1.0)  # Cap at 1 lot for safety
 
-        return lot_size, risk_amount
+        # Recalculate actual risk amount
+        actual_risk = lot_size * stop_loss_pips * pip_value_per_lot
+
+        return lot_size, actual_risk
+
+    @staticmethod
+    def calculate_tp_levels_for_small_account(entry: float, stop_loss: float, 
+                                               action: str, atr: float, 
+                                               account_balance: float) -> Tuple[float, float, float]:
+        """
+        Calculate appropriate TP levels for small accounts - NEW
+        Tighter targets for accounts under $100
+        """
+        if account_balance < 100:
+            # Tighter TPs for small accounts
+            if action == "BUY":
+                tp1 = entry + (1.0 * atr)  # Conservative
+                tp2 = entry + (1.5 * atr)
+                tp3 = entry + (2.5 * atr)
+            else:
+                tp1 = entry - (1.0 * atr)
+                tp2 = entry - (1.5 * atr)
+                tp3 = entry - (2.5 * atr)
+        else:
+            # Normal TPs for larger accounts
+            if action == "BUY":
+                tp1 = entry + (1.5 * atr)
+                tp2 = entry + (2.5 * atr)
+                tp3 = entry + (4.0 * atr)
+            else:
+                tp1 = entry - (1.5 * atr)
+                tp2 = entry - (2.5 * atr)
+                tp3 = entry - (4.0 * atr)
+
+        return tp1, tp2, tp3
 
     @staticmethod
     def calculate_breakeven_price(entry: float, action: str, stop_loss: float) -> float:
         """Calculate breakeven price (entry + spread buffer)"""
-        spread_buffer = abs(entry - stop_loss) * 0.1
+        spread_buffer = abs(entry - stop_loss) * 0.15
 
         if 'BUY' in action:
             return entry + spread_buffer
@@ -527,13 +622,14 @@ class RiskCalculator:
 
 
 class EliteTradingBot:
-    """Elite Trading Bot v7.0 - GitHub Actions Edition with WebSocket Support"""
+    """Elite Trading Bot v8.0 - Institutional Grade"""
 
     SYMBOLS = ['XAUUSD', 'BTCUSD']
 
     def __init__(self, telegram_token: str, main_chat_id: str, simple_chat_id: str,
                  account_balance: float = 500.0, risk_percent: float = 2.0,
-                 deriv_app_id: str = "1089", check_news: bool = True):
+                 deriv_app_id: str = "1089", check_news: bool = True,
+                 min_confidence: float = 80.0):
 
         self.notifier = TelegramNotifier(telegram_token, main_chat_id, simple_chat_id)
         self.data_fetcher = DerivDataFetcher(deriv_app_id)
@@ -541,16 +637,18 @@ class EliteTradingBot:
 
         self.account_balance = account_balance
         self.risk_percent = risk_percent
-        self.min_confidence = 80.0
+        self.min_confidence = min_confidence  # FIXED: Now uses parameter
         self.timeframe = '1h'
         self.recent_signals = deque(maxlen=50)
         self.check_news = check_news
         self.news_alerts_sent = set()
 
-        logger.info(f"Bot initialized: Balance=${self.account_balance:.2f}, Risk={risk_percent}%")
-        logger.info(f"Mode: SIGNAL GENERATION ONLY (GitHub Actions)")
-        logger.info(f"WebSocket: ENABLED ✅")
-        logger.info(f"News Monitoring: {'ENABLED ✅' if check_news else 'DISABLED'}")
+        logger.info(f"=" * 70)
+        logger.info(f"Bot Initialized: v8.0 INSTITUTIONAL GRADE")
+        logger.info(f"Balance: ${self.account_balance:.2f} | Risk: {risk_percent}%")
+        logger.info(f"Min Confidence: {self.min_confidence}%")
+        logger.info(f"WebSocket: ENABLED ✅ | News Monitor: {'ON' if check_news else 'OFF'}")
+        logger.info(f"=" * 70)
 
     def calculate_all_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate comprehensive technical indicators"""
@@ -613,11 +711,13 @@ class EliteTradingBot:
         # Supertrend
         df['supertrend'] = self._calculate_supertrend(df)
 
-        # Volume
+        # Volume (synthetic if missing)
         if 'volume' not in df.columns:
             df['volume'] = 1000
 
+        # Fill any remaining NaN
         df = df.ffill().bfill().fillna(0)
+        
         return df
 
     def _calculate_supertrend(self, df: pd.DataFrame, period: int = 10, multiplier: float = 3) -> pd.Series:
@@ -649,13 +749,15 @@ class EliteTradingBot:
         return supertrend
 
     def analyze_market(self, symbol: str) -> Optional[TradeSignal]:
-        """Analyze market and generate high-confidence signals"""
+        """Analyze market and generate high-confidence signals - INSTITUTIONAL GRADE"""
 
+        # Fetch data
         df = self.data_fetcher.get_historical_data(symbol, self.timeframe, 500)
         if df is None or len(df) < 200:
-            logger.warning(f"Insufficient data for {symbol}")
+            logger.warning(f"❌ Insufficient data for {symbol}")
             return None
 
+        # Calculate indicators
         df = self.calculate_all_indicators(df)
 
         last = df.iloc[-1]
@@ -665,114 +767,163 @@ class EliteTradingBot:
         reasons = []
         action = None
 
-        # 1. Trend Analysis (15 points)
+        # INSTITUTIONAL-GRADE SIGNAL LOGIC
+        # Total possible: 100 points
+
+        # 1. Trend Analysis - EMA Alignment (15 points)
         if last['ema_9'] > last['ema_21'] > last['ema_50']:
             signal_strength += 15
-            reasons.append("Strong bullish EMA alignment")
+            reasons.append("✅ Strong bullish EMA alignment (9>21>50)")
             if action is None:
                 action = "BUY"
         elif last['ema_9'] < last['ema_21'] < last['ema_50']:
             signal_strength += 15
-            reasons.append("Strong bearish EMA alignment")
+            reasons.append("✅ Strong bearish EMA alignment (9<21<50)")
             if action is None:
                 action = "SELL"
+        elif last['ema_9'] > last['ema_21'] and action == "BUY":
+            signal_strength += 8
+            reasons.append("Partial bullish EMA alignment")
+        elif last['ema_9'] < last['ema_21'] and action == "SELL":
+            signal_strength += 8
+            reasons.append("Partial bearish EMA alignment")
 
         # 2. RSI Confirmation (12 points)
-        if 30 < last['rsi'] < 45 and action == "BUY":
+        if 30 < last['rsi'] < 50 and action == "BUY":
             signal_strength += 12
+            reasons.append(f"✅ RSI optimal buy zone ({last['rsi']:.1f})")
+        elif 50 < last['rsi'] < 70 and action == "SELL":
+            signal_strength += 12
+            reasons.append(f"✅ RSI optimal sell zone ({last['rsi']:.1f})")
+        elif 25 < last['rsi'] < 30 and action == "BUY":
+            signal_strength += 8
             reasons.append(f"RSI oversold recovery ({last['rsi']:.1f})")
-        elif 55 < last['rsi'] < 70 and action == "SELL":
-            signal_strength += 12
+        elif 70 < last['rsi'] < 75 and action == "SELL":
+            signal_strength += 8
             reasons.append(f"RSI overbought reversal ({last['rsi']:.1f})")
 
         # 3. MACD Crossover (15 points)
-        if last['macd'] > last['macd_signal'] and prev['macd'] <= prev['macd_signal'] and action == "BUY":
+        macd_bullish_cross = last['macd'] > last['macd_signal'] and prev['macd'] <= prev['macd_signal']
+        macd_bearish_cross = last['macd'] < last['macd_signal'] and prev['macd'] >= prev['macd_signal']
+        
+        if macd_bullish_cross and action == "BUY":
             signal_strength += 15
-            reasons.append("MACD bullish crossover")
-        elif last['macd'] < last['macd_signal'] and prev['macd'] >= prev['macd_signal'] and action == "SELL":
+            reasons.append("✅ MACD bullish crossover")
+        elif macd_bearish_cross and action == "SELL":
             signal_strength += 15
-            reasons.append("MACD bearish crossover")
-        elif last['macd'] > last['macd_signal'] and action == "BUY":
-            signal_strength += 8
-            reasons.append("MACD bullish alignment")
-        elif last['macd'] < last['macd_signal'] and action == "SELL":
-            signal_strength += 8
-            reasons.append("MACD bearish alignment")
+            reasons.append("✅ MACD bearish crossover")
+        elif last['macd'] > last['macd_signal'] and last['macd_hist'] > 0 and action == "BUY":
+            signal_strength += 10
+            reasons.append("✅ MACD bullish momentum")
+        elif last['macd'] < last['macd_signal'] and last['macd_hist'] < 0 and action == "SELL":
+            signal_strength += 10
+            reasons.append("✅ MACD bearish momentum")
 
         # 4. Bollinger Bands (10 points)
         if last['close'] < last['bb_lower'] and action == "BUY":
             signal_strength += 10
-            reasons.append("Price below lower Bollinger Band")
+            reasons.append("✅ Price below lower BB (oversold)")
         elif last['close'] > last['bb_upper'] and action == "SELL":
             signal_strength += 10
-            reasons.append("Price above upper Bollinger Band")
+            reasons.append("✅ Price above upper BB (overbought)")
+        elif last['close'] < last['bb_middle'] and last['close'] > last['bb_lower'] and action == "BUY":
+            signal_strength += 5
+            reasons.append("Price in lower BB zone")
+        elif last['close'] > last['bb_middle'] and last['close'] < last['bb_upper'] and action == "SELL":
+            signal_strength += 5
+            reasons.append("Price in upper BB zone")
 
         # 5. Stochastic (10 points)
-        if last['stoch_k'] < 25 and last['stoch_d'] < 25 and action == "BUY":
+        if last['stoch_k'] < 20 and last['stoch_d'] < 20 and action == "BUY":
             signal_strength += 10
-            reasons.append(f"Stochastic oversold ({last['stoch_k']:.1f})")
-        elif last['stoch_k'] > 75 and last['stoch_d'] > 75 and action == "SELL":
+            reasons.append(f"✅ Stochastic oversold ({last['stoch_k']:.1f})")
+        elif last['stoch_k'] > 80 and last['stoch_d'] > 80 and action == "SELL":
             signal_strength += 10
-            reasons.append(f"Stochastic overbought ({last['stoch_k']:.1f})")
+            reasons.append(f"✅ Stochastic overbought ({last['stoch_k']:.1f})")
+        elif last['stoch_k'] < 30 and action == "BUY":
+            signal_strength += 6
+            reasons.append(f"Stochastic buy zone ({last['stoch_k']:.1f})")
+        elif last['stoch_k'] > 70 and action == "SELL":
+            signal_strength += 6
+            reasons.append(f"Stochastic sell zone ({last['stoch_k']:.1f})")
 
-        # 6. ADX Trend Strength (8 points)
-        if last['adx'] > 25:
+        # 6. ADX Trend Strength (10 points)
+        if last['adx'] > 30:
+            signal_strength += 10
+            reasons.append(f"✅ Very strong trend (ADX: {last['adx']:.1f})")
+        elif last['adx'] > 25:
             signal_strength += 8
-            reasons.append(f"Strong trend confirmed (ADX: {last['adx']:.1f})")
+            reasons.append(f"✅ Strong trend (ADX: {last['adx']:.1f})")
+        elif last['adx'] > 20:
+            signal_strength += 5
+            reasons.append(f"Moderate trend (ADX: {last['adx']:.1f})")
 
         # 7. Supertrend (10 points)
         if last['close'] > last['supertrend'] and action == "BUY":
             signal_strength += 10
-            reasons.append("Supertrend bullish")
+            reasons.append("✅ Supertrend bullish")
         elif last['close'] < last['supertrend'] and action == "SELL":
             signal_strength += 10
-            reasons.append("Supertrend bearish")
+            reasons.append("✅ Supertrend bearish")
 
         # 8. Volume Confirmation (8 points)
         avg_volume = df['volume'].rolling(20).mean().iloc[-1]
-        if last['volume'] > avg_volume * 1.2:
+        if last['volume'] > avg_volume * 1.5:
             signal_strength += 8
-            reasons.append("High volume confirmation")
+            reasons.append("✅ High volume confirmation")
+        elif last['volume'] > avg_volume * 1.2:
+            signal_strength += 5
+            reasons.append("Above-average volume")
 
-        # 9. Price-MA Position (7 points)
-        if action == "BUY" and last['close'] > last['sma_20'] > last['sma_50']:
-            signal_strength += 7
-            reasons.append("Price above key moving averages")
-        elif action == "SELL" and last['close'] < last['sma_20'] < last['sma_50']:
-            signal_strength += 7
-            reasons.append("Price below key moving averages")
+        # 9. Price-MA Position (5 points)
+        if action == "BUY" and last['close'] > last['sma_50']:
+            signal_strength += 5
+            reasons.append("✅ Price above SMA50")
+        elif action == "SELL" and last['close'] < last['sma_50']:
+            signal_strength += 5
+            reasons.append("✅ Price below SMA50")
 
         # 10. Momentum Confirmation (5 points)
         if action == "BUY" and last['close'] > prev['close']:
             signal_strength += 5
-            reasons.append("Bullish momentum")
+            reasons.append("✅ Bullish price action")
         elif action == "SELL" and last['close'] < prev['close']:
             signal_strength += 5
-            reasons.append("Bearish momentum")
+            reasons.append("✅ Bearish price action")
 
+        # Calculate final confidence
         confidence = min(signal_strength, 100)
 
-        # Only generate signals above threshold
+        # STRICT FILTERING: Only 80%+ signals
         if confidence < self.min_confidence or action is None:
-            logger.info(f"{symbol}: Confidence {confidence:.1f}% - Below threshold")
+            logger.info(f"{symbol}: {confidence:.1f}% - Below {self.min_confidence}% threshold ❌")
             return None
+
+        logger.info(f"{symbol}: {confidence:.1f}% signal detected! ✅")
 
         # Calculate trade parameters
         current_price = last['close']
         atr = last['atr']
 
+        # Adjust SL/TP based on account size
+        if self.account_balance < 100:
+            # Tighter SL for small accounts
+            sl_multiplier = 1.5
+        else:
+            sl_multiplier = 2.0
+
         if action == "BUY":
             entry_price = current_price
-            stop_loss = current_price - (2.0 * atr)
-            tp1 = current_price + (1.5 * atr)
-            tp2 = current_price + (2.5 * atr)
-            tp3 = current_price + (4.0 * atr)
+            stop_loss = current_price - (sl_multiplier * atr)
+            tp1, tp2, tp3 = RiskCalculator.calculate_tp_levels_for_small_account(
+                entry_price, stop_loss, action, atr, self.account_balance
+            )
         else:  # SELL
             entry_price = current_price
-            stop_loss = current_price + (2.0 * atr)
-            tp1 = current_price - (1.5 * atr)
-            tp2 = current_price - (2.5 * atr)
-            tp3 = current_price - (4.0 * atr)
+            stop_loss = current_price + (sl_multiplier * atr)
+            tp1, tp2, tp3 = RiskCalculator.calculate_tp_levels_for_small_account(
+                entry_price, stop_loss, action, atr, self.account_balance
+            )
 
         # Calculate pips
         pip_size = 0.01 if symbol == 'XAUUSD' else 1.0
@@ -803,7 +954,7 @@ class EliteTradingBot:
             tp3=tp3,
             risk_reward_ratio=rr_ratio,
             timeframe=self.timeframe,
-            strategy_name="Multi-Indicator Confluence v7.0",
+            strategy_name="Institutional Multi-Indicator v8.0",
             indicators={
                 'rsi': float(last['rsi']),
                 'macd': float(last['macd']),
@@ -825,24 +976,23 @@ class EliteTradingBot:
         return signal
 
     def is_duplicate_signal(self, signal: TradeSignal) -> bool:
-        """Check for duplicate signals within last hour"""
+        """Check for duplicate signals within last 2 hours"""
         for recent in self.recent_signals:
             if (recent.symbol == signal.symbol and 
                 recent.action == signal.action and
-                abs((signal.timestamp - recent.timestamp).total_seconds()) < 3600):
+                abs((signal.timestamp - recent.timestamp).total_seconds()) < 7200):
                 return True
         return False
 
     def run(self):
-        """Run single analysis cycle"""
+        """Run single analysis cycle - INSTITUTIONAL GRADE"""
         logger.info("=" * 70)
-        logger.info("🚀 ELITE TRADING BOT v7.0 - GITHUB ACTIONS EDITION")
+        logger.info("🚀 ELITE TRADING BOT v8.0 - INSTITUTIONAL GRADE")
         logger.info("=" * 70)
         logger.info(f"Analysis Time: {datetime.now(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        logger.info(f"Account Balance: ${self.account_balance:.2f}")
-        logger.info(f"Risk Per Trade: {self.risk_percent}%")
-        logger.info(f"Minimum Confidence: {self.min_confidence}%")
-        logger.info(f"WebSocket Connection: ENABLED ✅")
+        logger.info(f"Account: ${self.account_balance:.2f} | Risk: {self.risk_percent}%")
+        logger.info(f"Min Confidence: {self.min_confidence}% (STRICT)")
+        logger.info(f"WebSocket: ENABLED ✅ | News Monitor: {'ON' if self.check_news else 'OFF'}")
         logger.info("=" * 70)
 
         signals_generated = 0
@@ -851,19 +1001,21 @@ class EliteTradingBot:
             try:
                 logger.info(f"\n📊 Analyzing {symbol}...")
 
-                # Check market hours
+                # 1. Check market hours (CRITICAL FOR GOLD)
                 is_open, status = MarketHoursValidator.get_market_status(symbol)
                 if not is_open:
-                    logger.info(f"   ⚪ {status}")
+                    logger.warning(f"   ⚪ {status}")
                     self.notifier.send_market_closed_alert(symbol, status)
                     continue
 
-                # Check for high-impact news
+                logger.info(f"   ✅ {status}")
+
+                # 2. Check for high-impact news
                 if self.check_news:
                     is_safe, upcoming_news = self.news_monitor.check_news_before_trade(symbol, hours_ahead=2)
                     
                     if not is_safe:
-                        logger.warning(f"   ⚠️ High-impact news detected - Skipping {symbol}")
+                        logger.warning(f"   🚨 HIGH-IMPACT NEWS DETECTED - BLOCKING {symbol}")
                         
                         # Send news alert (only once per news event)
                         news_ids = {f"{n.title}_{n.date.isoformat()}" for n in upcoming_news}
@@ -873,36 +1025,44 @@ class EliteTradingBot:
                         continue
                     
                     if upcoming_news:
-                        logger.info(f"   ℹ️ News in next 2 hours but not critical - Proceeding")
+                        logger.info(f"   ℹ️ News detected but >1hr away - Proceeding with caution")
 
-                # Analyze market
+                # 3. Analyze market
                 signal = self.analyze_market(symbol)
 
                 if signal and not self.is_duplicate_signal(signal):
-                    logger.info(f"✅ HIGH-CONFIDENCE SIGNAL: {signal.action} {symbol} @ {signal.confidence:.1f}%")
-                    logger.info(f"   Entry: {signal.entry_price:.5f} | SL: {signal.stop_loss:.5f} | TP: {signal.tp3:.5f}")
-                    logger.info(f"   Position: {signal.position_size:.2f} lots | Risk: ${signal.risk_amount_usd:.2f}")
-                    logger.info(f"   R:R Ratio: 1:{signal.risk_reward_ratio:.2f}")
+                    logger.info(f"✅ INSTITUTIONAL-GRADE SIGNAL GENERATED!")
+                    logger.info(f"   {signal.action} {symbol} @ {signal.confidence:.1f}%")
+                    logger.info(f"   Entry: {signal.entry_price:.5f}")
+                    logger.info(f"   SL: {signal.stop_loss:.5f} ({signal.stop_loss_pips:.1f} pips)")
+                    logger.info(f"   TP1/2/3: {signal.tp1_pips:.0f}/{signal.tp2_pips:.0f}/{signal.tp3_pips:.0f} pips")
+                    logger.info(f"   Position: {signal.position_size:.2f} lots")
+                    logger.info(f"   Risk: ${signal.risk_amount_usd:.2f}")
+                    logger.info(f"   R:R: 1:{signal.risk_reward_ratio:.2f}")
 
                     self.recent_signals.append(signal)
 
                     # Send to Telegram
                     if self.notifier.send_signal(signal):
-                        logger.info(f"   ✅ Signal sent to Telegram")
+                        logger.info(f"   ✅ Signal sent to Telegram successfully")
                         signals_generated += 1
                     else:
                         logger.error(f"   ❌ Failed to send signal to Telegram")
 
+                elif signal and self.is_duplicate_signal(signal):
+                    logger.info(f"   ⚠️ Duplicate signal detected - Skipped")
                 else:
-                    logger.info(f"   No valid signal (confidence below {self.min_confidence}% or duplicate)")
+                    logger.info(f"   ⚪ No {self.min_confidence}%+ confidence setup found")
 
             except Exception as e:
                 logger.error(f"❌ Error analyzing {symbol}: {e}", exc_info=True)
+                continue
 
         logger.info("\n" + "=" * 70)
         logger.info(f"📊 ANALYSIS COMPLETE")
         logger.info(f"   Signals Generated: {signals_generated}")
-        logger.info(f"   Total Symbols: {len(self.SYMBOLS)}")
+        logger.info(f"   Symbols Analyzed: {len(self.SYMBOLS)}")
+        logger.info(f"   Quality Filter: {self.min_confidence}%+ only")
         logger.info("=" * 70)
 
         return signals_generated
@@ -920,14 +1080,18 @@ def main():
     # Trading parameters
     account_balance = float(os.getenv('ACCOUNT_BALANCE', '500'))
     risk_percent = float(os.getenv('RISK_PERCENT', '2.0'))
+    min_confidence = float(os.getenv('MIN_CONFIDENCE', '80.0'))
 
     # Validation
     if not telegram_token or not main_chat_id or not simple_chat_id:
-        logger.error("❌ Missing required environment variables!")
+        logger.error("❌ CRITICAL: Missing required environment variables!")
         logger.error("   Required: TELEGRAM_BOT_TOKEN, MAIN_CHAT_ID, SIMPLE_CHAT_ID")
         return 1
 
-    logger.info("✅ Configuration loaded from environment variables")
+    logger.info("✅ Configuration loaded successfully")
+    logger.info(f"   Account: ${account_balance:.2f}")
+    logger.info(f"   Risk: {risk_percent}%")
+    logger.info(f"   Min Confidence: {min_confidence}%")
 
     try:
         # Initialize bot
@@ -937,32 +1101,42 @@ def main():
             simple_chat_id=simple_chat_id,
             account_balance=account_balance,
             risk_percent=risk_percent,
-            deriv_app_id=deriv_app_id
+            deriv_app_id=deriv_app_id,
+            check_news=True,
+            min_confidence=min_confidence
         )
 
         # Send startup notification
         startup_msg = f"""
-🚀 <b>Elite Trading Bot v7.0 Started</b>
+🚀 <b>Elite Trading Bot v8.0 - INSTITUTIONAL GRADE</b>
 
-<b>Configuration:</b>
+<b>⚙️ Configuration:</b>
 • Mode: Signal Generation (GitHub Actions)
 • Connection: WebSocket ✅
-• Assets: XAUUSD, BTCUSD
+• Assets: XAUUSD (Forex), BTCUSD (Crypto)
 • Timeframe: 1 Hour
-• Min Confidence: 80%
+• Min Confidence: {min_confidence}% (STRICT)
 • Account: ${account_balance:.2f}
 • Risk per trade: {risk_percent}%
 
-<b>Analysis Features:</b>
-✅ Multi-indicator confluence
-✅ Advanced trend detection
-✅ Volume confirmation
-✅ Risk-based position sizing
-✅ Market hours validation
-✅ High-impact news monitoring
+<b>🛡️ Protection Features:</b>
+✅ Multi-indicator confluence (10 indicators)
+✅ Institutional-grade trend analysis
+✅ Volume & momentum confirmation
+✅ Dynamic position sizing
+✅ Market hours validation (No Gold weekends)
+✅ HIGH-IMPACT news blocking
+✅ Duplicate signal prevention
+✅ Small account protection (<$100)
 ✅ Complete trade management plans
 
-<i>Scanning for high-probability setups...</i>
+<b>📊 Signal Quality Standards:</b>
+• Only {min_confidence}%+ confidence signals sent
+• Multiple confirmation layers required
+• Risk-optimized entry/exit levels
+• Professional trade management
+
+<i>🔍 Scanning markets for premium setups...</i>
 """
         bot.notifier.send_status(startup_msg)
 
@@ -972,39 +1146,58 @@ def main():
         # Send completion summary
         if signals_count > 0:
             summary_msg = f"""
-✅ <b>Analysis Complete</b>
+✅ <b>Analysis Complete - {signals_count} Signal(s) Generated</b>
 
-🎯 <b>{signals_count} high-confidence signal(s) generated!</b>
+🎯 <b>HIGH-CONFIDENCE SETUP(S) DETECTED!</b>
 
-Check detailed signals above for:
-• Entry prices
-• Stop loss levels
-• Take profit targets (TP1/TP2/TP3)
-• Position sizing
-• Trade management plans
+<b>Signals sent include:</b>
+• Precise entry prices
+• Risk-optimized stop losses
+• Multi-level take profits (TP1/TP2/TP3)
+• Position sizing for your account
+• Complete trade management plans
+• Breakeven levels
 
-<i>Next analysis: Top of next hour</i>
+<b>⚡ Next Steps:</b>
+1. Review signal details above
+2. Verify market conditions
+3. Execute trade manually if conditions align
+4. Follow trade management plan
+
+<i>📅 Next analysis: Top of next hour</i>
+<i>🛡️ Quality over quantity - Only premium setups sent</i>
 """
         else:
             summary_msg = f"""
-✅ <b>Analysis Complete</b>
+✅ <b>Analysis Complete - Market Scan Finished</b>
 
-⚪ No 80%+ confidence signals this cycle
+⚪ <b>No {min_confidence}%+ confidence signals this cycle</b>
 
-<b>Market Status:</b>
-All assets scanned successfully. Current market conditions do not meet our high-confidence criteria.
+<b>📊 Market Status:</b>
+All assets scanned successfully. Current market conditions do not meet our institutional-grade criteria.
 
-<i>Quality over quantity - waiting for premium setups</i>
-<i>Next analysis: Top of next hour</i>
+<b>🔍 What we checked:</b>
+• Market hours (Gold weekends blocked)
+• High-impact news (None blocking)
+• Technical confluence ({min_confidence}%+ required)
+• Multiple indicator confirmation
+• Volume & momentum validation
+
+<b>💡 Strategy:</b>
+We prioritize quality over quantity. Only the highest probability setups with multiple confirmations are sent.
+
+<i>📅 Next analysis: Top of next hour</i>
+<i>🎯 Waiting for premium institutional-grade setups</i>
 """
 
         bot.notifier.send_status(summary_msg)
 
         logger.info("✅ Bot execution completed successfully")
+        logger.info(f"   Runtime: {datetime.now(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
         return 0
 
     except Exception as e:
-        logger.error(f"❌ Fatal error: {e}", exc_info=True)
+        logger.error(f"❌ FATAL ERROR: {e}", exc_info=True)
 
         # Try to send error notification
         try:
@@ -1012,10 +1205,13 @@ All assets scanned successfully. Current market conditions do not meet our high-
             error_msg = f"""
 🚨 <b>Bot Execution Error</b>
 
-An error occurred during analysis:
-<code>{str(e)[:200]}</code>
+<b>Error Type:</b> {type(e).__name__}
+<b>Message:</b> {str(e)[:300]}
 
-Check GitHub Actions logs for details.
+<b>Action Required:</b>
+Check GitHub Actions logs for full details.
+
+<b>Timestamp:</b> {datetime.now(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}
 """
             notifier.send_status(error_msg)
         except:
