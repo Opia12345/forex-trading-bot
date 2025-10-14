@@ -1086,97 +1086,97 @@ class EliteTradingBot:
 
         return signal
 
-        def is_duplicate_signal(self, signal: TradeSignal) -> bool:
-            """Check for duplicate signals within last 2 hours"""
-            for recent in self.recent_signals:
-                if (recent.symbol == signal.symbol and 
-                    recent.action == signal.action and
-                    abs((signal.timestamp - recent.timestamp).total_seconds()) < 7200):
-                    return True
-            return False
+    def is_duplicate_signal(self, signal: TradeSignal) -> bool:
+        """Check for duplicate signals within last 2 hours"""
+        for recent in self.recent_signals:
+            if (recent.symbol == signal.symbol and 
+                recent.action == signal.action and
+                abs((signal.timestamp - recent.timestamp).total_seconds()) < 7200):
+                return True
+        return False
 
-        def run(self):
-            """Run single analysis cycle - INSTITUTIONAL GRADE"""
-            logger.info("=" * 70)
-            logger.info("🚀 ELITE TRADING BOT v8.0 - INSTITUTIONAL GRADE")
-            logger.info("=" * 70)
-            logger.info(f"Analysis Time: {datetime.now(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
-            logger.info(f"Account: ${self.account_balance:.2f} | Risk: {self.risk_percent}%")
-            logger.info(f"Min Confidence: {self.min_confidence}% (STRICT)")
-            logger.info(f"WebSocket: ENABLED ✅ | News Monitor: {'ON' if self.check_news else 'OFF'}")
-            logger.info("=" * 70)
+    def run(self):
+        """Run single analysis cycle - INSTITUTIONAL GRADE"""
+        logger.info("=" * 70)
+        logger.info("🚀 ELITE TRADING BOT v8.0 - INSTITUTIONAL GRADE")
+        logger.info("=" * 70)
+        logger.info(f"Analysis Time: {datetime.now(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        logger.info(f"Account: ${self.account_balance:.2f} | Risk: {self.risk_percent}%")
+        logger.info(f"Min Confidence: {self.min_confidence}% (STRICT)")
+        logger.info(f"WebSocket: ENABLED ✅ | News Monitor: {'ON' if self.check_news else 'OFF'}")
+        logger.info("=" * 70)
 
-            signals_generated = 0
+        signals_generated = 0
 
-            for symbol in self.SYMBOLS:
-                try:
-                    logger.info(f"\n📊 Analyzing {symbol}...")
+        for symbol in self.SYMBOLS:
+            try:
+                logger.info(f"\n📊 Analyzing {symbol}...")
 
-                    # 1. Check market hours (CRITICAL FOR GOLD)
-                    is_open, status = MarketHoursValidator.get_market_status(symbol)
-                    if not is_open:
-                        logger.warning(f"   ⚪ {status}")
-                        self.notifier.send_market_closed_alert(symbol, status)
-                        continue
-
-                    logger.info(f"   ✅ {status}")
-
-                    # 2. Check for high-impact news
-                    if self.check_news:
-                        is_safe, upcoming_news = self.news_monitor.check_news_before_trade(symbol, hours_ahead=2)
-                        
-                        if not is_safe:
-                            logger.warning(f"   🚨 HIGH-IMPACT NEWS DETECTED - BLOCKING {symbol}")
-                            
-                            # Send news alert (only once per news event)
-                            news_ids = {f"{n.title}_{n.date.isoformat()}" for n in upcoming_news}
-                            if not news_ids.issubset(self.news_alerts_sent):
-                                self.notifier.send_news_alert(upcoming_news)
-                                self.news_alerts_sent.update(news_ids)
-                            continue
-                        
-                        if upcoming_news:
-                            logger.info(f"   ℹ️ News detected but >1hr away - Proceeding with caution")
-
-                    # 3. Analyze market
-                    signal = self.analyze_market(symbol)
-
-                    if signal and not self.is_duplicate_signal(signal):
-                        logger.info(f"✅ INSTITUTIONAL-GRADE SIGNAL GENERATED!")
-                        logger.info(f"   {signal.action} {symbol} @ {signal.confidence:.1f}%")
-                        logger.info(f"   Entry: {signal.entry_price:.5f}")
-                        logger.info(f"   SL: {signal.stop_loss:.5f} ({signal.stop_loss_pips:.1f} pips)")
-                        logger.info(f"   TP1/2/3: {signal.tp1_pips:.0f}/{signal.tp2_pips:.0f}/{signal.tp3_pips:.0f} pips")
-                        logger.info(f"   Position: {signal.position_size:.2f} lots")
-                        logger.info(f"   Risk: ${signal.risk_amount_usd:.2f}")
-                        logger.info(f"   R:R: 1:{signal.risk_reward_ratio:.2f}")
-
-                        self.recent_signals.append(signal)
-
-                        # Send to Telegram
-                        if self.notifier.send_signal(signal):
-                            logger.info(f"   ✅ Signal sent to Telegram successfully")
-                            signals_generated += 1
-                        else:
-                            logger.error(f"   ❌ Failed to send signal to Telegram")
-
-                    elif signal and self.is_duplicate_signal(signal):
-                        logger.info(f"   ⚠️ Duplicate signal detected - Skipped")
-                    else:
-                        logger.info(f"   ⚪ No {self.min_confidence}%+ confidence setup found")
-
-                except Exception as e:
-                    logger.error(f"❌ Error analyzing {symbol}: {e}", exc_info=True)
+                # 1. Check market hours (CRITICAL FOR GOLD)
+                is_open, status = MarketHoursValidator.get_market_status(symbol)
+                if not is_open:
+                    logger.warning(f"   ⚪ {status}")
+                    self.notifier.send_market_closed_alert(symbol, status)
                     continue
 
-            logger.info("\n" + "=" * 70)
-            logger.info(f"📊 ANALYSIS COMPLETE")
-            logger.info(f"   Signals Generated: {signals_generated}")
-            logger.info(f"   Symbols Analyzed: {len(self.SYMBOLS)}")
-            logger.info(f"   Quality Filter: {self.min_confidence}%+ only")
-            logger.info("=" * 70)
+                logger.info(f"   ✅ {status}")
 
-            return signals_generated
+                # 2. Check for high-impact news
+                if self.check_news:
+                    is_safe, upcoming_news = self.news_monitor.check_news_before_trade(symbol, hours_ahead=2)
+                    
+                    if not is_safe:
+                        logger.warning(f"   🚨 HIGH-IMPACT NEWS DETECTED - BLOCKING {symbol}")
+                        
+                        # Send news alert (only once per news event)
+                        news_ids = {f"{n.title}_{n.date.isoformat()}" for n in upcoming_news}
+                        if not news_ids.issubset(self.news_alerts_sent):
+                            self.notifier.send_news_alert(upcoming_news)
+                            self.news_alerts_sent.update(news_ids)
+                        continue
+                    
+                    if upcoming_news:
+                        logger.info(f"   ℹ️ News detected but >1hr away - Proceeding with caution")
+
+                # 3. Analyze market
+                signal = self.analyze_market(symbol)
+
+                if signal and not self.is_duplicate_signal(signal):
+                    logger.info(f"✅ INSTITUTIONAL-GRADE SIGNAL GENERATED!")
+                    logger.info(f"   {signal.action} {symbol} @ {signal.confidence:.1f}%")
+                    logger.info(f"   Entry: {signal.entry_price:.5f}")
+                    logger.info(f"   SL: {signal.stop_loss:.5f} ({signal.stop_loss_pips:.1f} pips)")
+                    logger.info(f"   TP1/2/3: {signal.tp1_pips:.0f}/{signal.tp2_pips:.0f}/{signal.tp3_pips:.0f} pips")
+                    logger.info(f"   Position: {signal.position_size:.2f} lots")
+                    logger.info(f"   Risk: ${signal.risk_amount_usd:.2f}")
+                    logger.info(f"   R:R: 1:{signal.risk_reward_ratio:.2f}")
+
+                    self.recent_signals.append(signal)
+
+                    # Send to Telegram
+                    if self.notifier.send_signal(signal):
+                        logger.info(f"   ✅ Signal sent to Telegram successfully")
+                        signals_generated += 1
+                    else:
+                        logger.error(f"   ❌ Failed to send signal to Telegram")
+
+                elif signal and self.is_duplicate_signal(signal):
+                    logger.info(f"   ⚠️ Duplicate signal detected - Skipped")
+                else:
+                    logger.info(f"   ⚪ No {self.min_confidence}%+ confidence setup found")
+
+            except Exception as e:
+                logger.error(f"❌ Error analyzing {symbol}: {e}", exc_info=True)
+                continue
+
+        logger.info("\n" + "=" * 70)
+        logger.info(f"📊 ANALYSIS COMPLETE")
+        logger.info(f"   Signals Generated: {signals_generated}")
+        logger.info(f"   Symbols Analyzed: {len(self.SYMBOLS)}")
+        logger.info(f"   Quality Filter: {self.min_confidence}%+ only")
+        logger.info("=" * 70)
+
+        return signals_generated
 
 def main():
     """Main entry point for GitHub Actions"""
