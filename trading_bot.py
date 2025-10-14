@@ -748,7 +748,7 @@ class EliteTradingBot:
 
         return supertrend
 
-def analyze_market(self, symbol: str) -> Optional[TradeSignal]:
+    def analyze_market(self, symbol: str) -> Optional[TradeSignal]:
     """Analyze market and generate high-confidence signals - FIXED SCORING"""
 
     # Fetch data
