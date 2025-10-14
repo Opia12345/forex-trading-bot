@@ -749,433 +749,434 @@ class EliteTradingBot:
         return supertrend
 
     def analyze_market(self, symbol: str) -> Optional[TradeSignal]:
+        """Analyze market and generate high-confidence signals - FIXED SCORING"""
 
-    # Fetch data
-    df = self.data_fetcher.get_historical_data(symbol, self.timeframe, 500)
-    if df is None or len(df) < 200:
-        logger.warning(f"❌ Insufficient data for {symbol}")
-        return None
+        # Fetch data
+        df = self.data_fetcher.get_historical_data(symbol, self.timeframe, 500)
+        if df is None or len(df) < 200:
+            logger.warning(f"❌ Insufficient data for {symbol}")
+            return None
 
-    # Calculate indicators
-    df = self.calculate_all_indicators(df)
+        # Calculate indicators
+        df = self.calculate_all_indicators(df)
 
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
 
-    # DETERMINE PRIMARY DIRECTION FIRST (based on multiple factors)
-    bullish_score = 0
-    bearish_score = 0
+        # DETERMINE PRIMARY DIRECTION FIRST (based on multiple factors)
+        bullish_score = 0
+        bearish_score = 0
 
-    # Check primary trend indicators
-    if last['ema_9'] > last['ema_21']:
-        bullish_score += 3
-    else:
-        bearish_score += 3
+        # Check primary trend indicators
+        if last['ema_9'] > last['ema_21']:
+            bullish_score += 3
+        else:
+            bearish_score += 3
 
-    if last['close'] > last['sma_50']:
-        bullish_score += 2
-    else:
-        bearish_score += 2
+        if last['close'] > last['sma_50']:
+            bullish_score += 2
+        else:
+            bearish_score += 2
 
-    if last['macd'] > last['macd_signal']:
-        bullish_score += 2
-    else:
-        bearish_score += 2
+        if last['macd'] > last['macd_signal']:
+            bullish_score += 2
+        else:
+            bearish_score += 2
 
-    if last['close'] > last['supertrend']:
-        bullish_score += 2
-    else:
-        bearish_score += 2
-
-    if last['rsi'] > 50:
-        bullish_score += 1
-    else:
-        bearish_score += 1
-
-    # Set action based on dominant direction
-    if bullish_score > bearish_score:
-        action = "BUY"
-    elif bearish_score > bullish_score:
-        action = "SELL"
-    else:
-        logger.info(f"{symbol}: Market neutral - No clear direction")
-        return None
-
-    # NOW score the quality of the setup
-    signal_strength = 0
-    reasons = []
-
-    # 1. EMA Trend Strength (15 points) - RELAXED
-    if action == "BUY":
-        if last['ema_9'] > last['ema_21'] > last['ema_50']:
-            signal_strength += 15
-            reasons.append("✅ Perfect bullish EMA alignment")
-        elif last['ema_9'] > last['ema_21']:
-            signal_strength += 10
-            reasons.append("✅ Bullish EMA trend (9>21)")
-        elif last['ema_9'] > last['sma_50']:
-            signal_strength += 5
-            reasons.append("Bullish EMA positioning")
-    else:  # SELL
-        if last['ema_9'] < last['ema_21'] < last['ema_50']:
-            signal_strength += 15
-            reasons.append("✅ Perfect bearish EMA alignment")
-        elif last['ema_9'] < last['ema_21']:
-            signal_strength += 10
-            reasons.append("✅ Bearish EMA trend (9<21)")
-        elif last['ema_9'] < last['sma_50']:
-            signal_strength += 5
-            reasons.append("Bearish EMA positioning")
-
-    # 2. RSI Position (15 points) - RELAXED
-    if action == "BUY":
-        if 30 <= last['rsi'] <= 55:
-            signal_strength += 15
-            reasons.append(f"✅ RSI ideal buy zone ({last['rsi']:.1f})")
-        elif last['rsi'] < 40:
-            signal_strength += 12
-            reasons.append(f"✅ RSI oversold recovery ({last['rsi']:.1f})")
-        elif last['rsi'] < 50:
-            signal_strength += 8
-            reasons.append(f"RSI below 50 ({last['rsi']:.1f})")
-        elif last['rsi'] < 60:
-            signal_strength += 5
-            reasons.append(f"RSI neutral-bullish ({last['rsi']:.1f})")
-    else:  # SELL
-        if 45 <= last['rsi'] <= 70:
-            signal_strength += 15
-            reasons.append(f"✅ RSI ideal sell zone ({last['rsi']:.1f})")
-        elif last['rsi'] > 60:
-            signal_strength += 12
-            reasons.append(f"✅ RSI overbought reversal ({last['rsi']:.1f})")
-        elif last['rsi'] > 50:
-            signal_strength += 8
-            reasons.append(f"RSI above 50 ({last['rsi']:.1f})")
-        elif last['rsi'] > 40:
-            signal_strength += 5
-            reasons.append(f"RSI neutral-bearish ({last['rsi']:.1f})")
-
-    # 3. MACD Direction (15 points) - RELAXED
-    macd_bullish_cross = last['macd'] > last['macd_signal'] and prev['macd'] <= prev['macd_signal']
-    macd_bearish_cross = last['macd'] < last['macd_signal'] and prev['macd'] >= prev['macd_signal']
-    
-    if action == "BUY":
-        if macd_bullish_cross:
-            signal_strength += 15
-            reasons.append("✅ MACD bullish crossover")
-        elif last['macd'] > last['macd_signal'] and last['macd_hist'] > 0:
-            signal_strength += 12
-            reasons.append("✅ MACD bullish momentum")
-        elif last['macd'] > last['macd_signal']:
-            signal_strength += 8
-            reasons.append("MACD above signal")
-        elif last['macd_hist'] > prev['macd_hist']:
-            signal_strength += 5
-            reasons.append("MACD histogram rising")
-    else:  # SELL
-        if macd_bearish_cross:
-            signal_strength += 15
-            reasons.append("✅ MACD bearish crossover")
-        elif last['macd'] < last['macd_signal'] and last['macd_hist'] < 0:
-            signal_strength += 12
-            reasons.append("✅ MACD bearish momentum")
-        elif last['macd'] < last['macd_signal']:
-            signal_strength += 8
-            reasons.append("MACD below signal")
-        elif last['macd_hist'] < prev['macd_hist']:
-            signal_strength += 5
-            reasons.append("MACD histogram falling")
-
-    # 4. Supertrend Confirmation (12 points)
-    if action == "BUY":
         if last['close'] > last['supertrend']:
+            bullish_score += 2
+        else:
+            bearish_score += 2
+
+        if last['rsi'] > 50:
+            bullish_score += 1
+        else:
+            bearish_score += 1
+
+        # Set action based on dominant direction
+        if bullish_score > bearish_score:
+            action = "BUY"
+        elif bearish_score > bullish_score:
+            action = "SELL"
+        else:
+            logger.info(f"{symbol}: Market neutral - No clear direction")
+            return None
+
+        # NOW score the quality of the setup
+        signal_strength = 0
+        reasons = []
+
+        # 1. EMA Trend Strength (15 points) - RELAXED
+        if action == "BUY":
+            if last['ema_9'] > last['ema_21'] > last['ema_50']:
+                signal_strength += 15
+                reasons.append("✅ Perfect bullish EMA alignment")
+            elif last['ema_9'] > last['ema_21']:
+                signal_strength += 10
+                reasons.append("✅ Bullish EMA trend (9>21)")
+            elif last['ema_9'] > last['sma_50']:
+                signal_strength += 5
+                reasons.append("Bullish EMA positioning")
+        else:  # SELL
+            if last['ema_9'] < last['ema_21'] < last['ema_50']:
+                signal_strength += 15
+                reasons.append("✅ Perfect bearish EMA alignment")
+            elif last['ema_9'] < last['ema_21']:
+                signal_strength += 10
+                reasons.append("✅ Bearish EMA trend (9<21)")
+            elif last['ema_9'] < last['sma_50']:
+                signal_strength += 5
+                reasons.append("Bearish EMA positioning")
+
+        # 2. RSI Position (15 points) - RELAXED
+        if action == "BUY":
+            if 30 <= last['rsi'] <= 55:
+                signal_strength += 15
+                reasons.append(f"✅ RSI ideal buy zone ({last['rsi']:.1f})")
+            elif last['rsi'] < 40:
+                signal_strength += 12
+                reasons.append(f"✅ RSI oversold recovery ({last['rsi']:.1f})")
+            elif last['rsi'] < 50:
+                signal_strength += 8
+                reasons.append(f"RSI below 50 ({last['rsi']:.1f})")
+            elif last['rsi'] < 60:
+                signal_strength += 5
+                reasons.append(f"RSI neutral-bullish ({last['rsi']:.1f})")
+        else:  # SELL
+            if 45 <= last['rsi'] <= 70:
+                signal_strength += 15
+                reasons.append(f"✅ RSI ideal sell zone ({last['rsi']:.1f})")
+            elif last['rsi'] > 60:
+                signal_strength += 12
+                reasons.append(f"✅ RSI overbought reversal ({last['rsi']:.1f})")
+            elif last['rsi'] > 50:
+                signal_strength += 8
+                reasons.append(f"RSI above 50 ({last['rsi']:.1f})")
+            elif last['rsi'] > 40:
+                signal_strength += 5
+                reasons.append(f"RSI neutral-bearish ({last['rsi']:.1f})")
+
+        # 3. MACD Direction (15 points) - RELAXED
+        macd_bullish_cross = last['macd'] > last['macd_signal'] and prev['macd'] <= prev['macd_signal']
+        macd_bearish_cross = last['macd'] < last['macd_signal'] and prev['macd'] >= prev['macd_signal']
+        
+        if action == "BUY":
+            if macd_bullish_cross:
+                signal_strength += 15
+                reasons.append("✅ MACD bullish crossover")
+            elif last['macd'] > last['macd_signal'] and last['macd_hist'] > 0:
+                signal_strength += 12
+                reasons.append("✅ MACD bullish momentum")
+            elif last['macd'] > last['macd_signal']:
+                signal_strength += 8
+                reasons.append("MACD above signal")
+            elif last['macd_hist'] > prev['macd_hist']:
+                signal_strength += 5
+                reasons.append("MACD histogram rising")
+        else:  # SELL
+            if macd_bearish_cross:
+                signal_strength += 15
+                reasons.append("✅ MACD bearish crossover")
+            elif last['macd'] < last['macd_signal'] and last['macd_hist'] < 0:
+                signal_strength += 12
+                reasons.append("✅ MACD bearish momentum")
+            elif last['macd'] < last['macd_signal']:
+                signal_strength += 8
+                reasons.append("MACD below signal")
+            elif last['macd_hist'] < prev['macd_hist']:
+                signal_strength += 5
+                reasons.append("MACD histogram falling")
+
+        # 4. Supertrend Confirmation (12 points)
+        if action == "BUY":
+            if last['close'] > last['supertrend']:
+                signal_strength += 12
+                reasons.append("✅ Supertrend bullish")
+            elif last['close'] > prev['supertrend']:
+                signal_strength += 6
+                reasons.append("Supertrend break attempt")
+        else:  # SELL
+            if last['close'] < last['supertrend']:
+                signal_strength += 12
+                reasons.append("✅ Supertrend bearish")
+            elif last['close'] < prev['supertrend']:
+                signal_strength += 6
+                reasons.append("Supertrend break attempt")
+
+        # 5. ADX Trend Strength (12 points)
+        if last['adx'] > 30:
             signal_strength += 12
-            reasons.append("✅ Supertrend bullish")
-        elif last['close'] > prev['supertrend']:
-            signal_strength += 6
-            reasons.append("Supertrend break attempt")
-    else:  # SELL
-        if last['close'] < last['supertrend']:
-            signal_strength += 12
-            reasons.append("✅ Supertrend bearish")
-        elif last['close'] < prev['supertrend']:
-            signal_strength += 6
-            reasons.append("Supertrend break attempt")
-
-    # 5. ADX Trend Strength (12 points)
-    if last['adx'] > 30:
-        signal_strength += 12
-        reasons.append(f"✅ Very strong trend (ADX: {last['adx']:.1f})")
-    elif last['adx'] > 25:
-        signal_strength += 10
-        reasons.append(f"✅ Strong trend (ADX: {last['adx']:.1f})")
-    elif last['adx'] > 20:
-        signal_strength += 8
-        reasons.append(f"Good trend (ADX: {last['adx']:.1f})")
-    elif last['adx'] > 15:
-        signal_strength += 5
-        reasons.append(f"Moderate trend (ADX: {last['adx']:.1f})")
-
-    # 6. Bollinger Bands (10 points) - RELAXED
-    bb_width = last['bb_upper'] - last['bb_lower']
-    bb_position = (last['close'] - last['bb_lower']) / bb_width if bb_width > 0 else 0.5
-    
-    if action == "BUY":
-        if bb_position < 0.2:  # Near lower band
+            reasons.append(f"✅ Very strong trend (ADX: {last['adx']:.1f})")
+        elif last['adx'] > 25:
             signal_strength += 10
-            reasons.append("✅ Price near lower BB (oversold)")
-        elif bb_position < 0.4:
+            reasons.append(f"✅ Strong trend (ADX: {last['adx']:.1f})")
+        elif last['adx'] > 20:
             signal_strength += 8
-            reasons.append("Price in lower BB zone")
-        elif bb_position < 0.5:
+            reasons.append(f"Good trend (ADX: {last['adx']:.1f})")
+        elif last['adx'] > 15:
             signal_strength += 5
-            reasons.append("Price below BB middle")
-    else:  # SELL
-        if bb_position > 0.8:  # Near upper band
-            signal_strength += 10
-            reasons.append("✅ Price near upper BB (overbought)")
-        elif bb_position > 0.6:
-            signal_strength += 8
-            reasons.append("Price in upper BB zone")
-        elif bb_position > 0.5:
+            reasons.append(f"Moderate trend (ADX: {last['adx']:.1f})")
+
+        # 6. Bollinger Bands (10 points) - RELAXED
+        bb_width = last['bb_upper'] - last['bb_lower']
+        bb_position = (last['close'] - last['bb_lower']) / bb_width if bb_width > 0 else 0.5
+        
+        if action == "BUY":
+            if bb_position < 0.2:  # Near lower band
+                signal_strength += 10
+                reasons.append("✅ Price near lower BB (oversold)")
+            elif bb_position < 0.4:
+                signal_strength += 8
+                reasons.append("Price in lower BB zone")
+            elif bb_position < 0.5:
+                signal_strength += 5
+                reasons.append("Price below BB middle")
+        else:  # SELL
+            if bb_position > 0.8:  # Near upper band
+                signal_strength += 10
+                reasons.append("✅ Price near upper BB (overbought)")
+            elif bb_position > 0.6:
+                signal_strength += 8
+                reasons.append("Price in upper BB zone")
+            elif bb_position > 0.5:
+                signal_strength += 5
+                reasons.append("Price above BB middle")
+
+        # 7. Stochastic (10 points) - RELAXED
+        if action == "BUY":
+            if last['stoch_k'] < 20:
+                signal_strength += 10
+                reasons.append(f"✅ Stochastic oversold ({last['stoch_k']:.1f})")
+            elif last['stoch_k'] < 30:
+                signal_strength += 8
+                reasons.append(f"✅ Stochastic buy zone ({last['stoch_k']:.1f})")
+            elif last['stoch_k'] < 40:
+                signal_strength += 6
+                reasons.append(f"Stochastic favorable ({last['stoch_k']:.1f})")
+            elif last['stoch_k'] < 50:
+                signal_strength += 3
+                reasons.append(f"Stochastic below 50 ({last['stoch_k']:.1f})")
+        else:  # SELL
+            if last['stoch_k'] > 80:
+                signal_strength += 10
+                reasons.append(f"✅ Stochastic overbought ({last['stoch_k']:.1f})")
+            elif last['stoch_k'] > 70:
+                signal_strength += 8
+                reasons.append(f"✅ Stochastic sell zone ({last['stoch_k']:.1f})")
+            elif last['stoch_k'] > 60:
+                signal_strength += 6
+                reasons.append(f"Stochastic favorable ({last['stoch_k']:.1f})")
+            elif last['stoch_k'] > 50:
+                signal_strength += 3
+                reasons.append(f"Stochastic above 50 ({last['stoch_k']:.1f})")
+
+        # 8. Price Momentum (6 points)
+        price_change = ((last['close'] - prev['close']) / prev['close']) * 100
+        
+        if action == "BUY":
+            if price_change > 0.5:
+                signal_strength += 6
+                reasons.append(f"✅ Strong bullish momentum (+{price_change:.2f}%)")
+            elif price_change > 0:
+                signal_strength += 4
+                reasons.append(f"Bullish momentum (+{price_change:.2f}%)")
+            elif price_change > -0.2:
+                signal_strength += 2
+                reasons.append("Price stable")
+        else:  # SELL
+            if price_change < -0.5:
+                signal_strength += 6
+                reasons.append(f"✅ Strong bearish momentum ({price_change:.2f}%)")
+            elif price_change < 0:
+                signal_strength += 4
+                reasons.append(f"Bearish momentum ({price_change:.2f}%)")
+            elif price_change < 0.2:
+                signal_strength += 2
+                reasons.append("Price stable")
+
+        # 9. Volume Confirmation (5 points)
+        avg_volume = df['volume'].rolling(20).mean().iloc[-1]
+        if last['volume'] > avg_volume * 1.5:
             signal_strength += 5
-            reasons.append("Price above BB middle")
-
-    # 7. Stochastic (10 points) - RELAXED
-    if action == "BUY":
-        if last['stoch_k'] < 20:
-            signal_strength += 10
-            reasons.append(f"✅ Stochastic oversold ({last['stoch_k']:.1f})")
-        elif last['stoch_k'] < 30:
-            signal_strength += 8
-            reasons.append(f"✅ Stochastic buy zone ({last['stoch_k']:.1f})")
-        elif last['stoch_k'] < 40:
-            signal_strength += 6
-            reasons.append(f"Stochastic favorable ({last['stoch_k']:.1f})")
-        elif last['stoch_k'] < 50:
+            reasons.append("✅ High volume")
+        elif last['volume'] > avg_volume * 1.2:
             signal_strength += 3
-            reasons.append(f"Stochastic below 50 ({last['stoch_k']:.1f})")
-    else:  # SELL
-        if last['stoch_k'] > 80:
-            signal_strength += 10
-            reasons.append(f"✅ Stochastic overbought ({last['stoch_k']:.1f})")
-        elif last['stoch_k'] > 70:
-            signal_strength += 8
-            reasons.append(f"✅ Stochastic sell zone ({last['stoch_k']:.1f})")
-        elif last['stoch_k'] > 60:
-            signal_strength += 6
-            reasons.append(f"Stochastic favorable ({last['stoch_k']:.1f})")
-        elif last['stoch_k'] > 50:
-            signal_strength += 3
-            reasons.append(f"Stochastic above 50 ({last['stoch_k']:.1f})")
+            reasons.append("Above-average volume")
+        elif last['volume'] > avg_volume:
+            signal_strength += 1
+            reasons.append("Normal volume")
 
-    # 8. Price Momentum (6 points)
-    price_change = ((last['close'] - prev['close']) / prev['close']) * 100
-    
-    if action == "BUY":
-        if price_change > 0.5:
-            signal_strength += 6
-            reasons.append(f"✅ Strong bullish momentum (+{price_change:.2f}%)")
-        elif price_change > 0:
-            signal_strength += 4
-            reasons.append(f"Bullish momentum (+{price_change:.2f}%)")
-        elif price_change > -0.2:
-            signal_strength += 2
-            reasons.append("Price stable")
-    else:  # SELL
-        if price_change < -0.5:
-            signal_strength += 6
-            reasons.append(f"✅ Strong bearish momentum ({price_change:.2f}%)")
-        elif price_change < 0:
-            signal_strength += 4
-            reasons.append(f"Bearish momentum ({price_change:.2f}%)")
-        elif price_change < 0.2:
-            signal_strength += 2
-            reasons.append("Price stable")
+        # Calculate final confidence
+        confidence = min(signal_strength, 100)
 
-    # 9. Volume Confirmation (5 points)
-    avg_volume = df['volume'].rolling(20).mean().iloc[-1]
-    if last['volume'] > avg_volume * 1.5:
-        signal_strength += 5
-        reasons.append("✅ High volume")
-    elif last['volume'] > avg_volume * 1.2:
-        signal_strength += 3
-        reasons.append("Above-average volume")
-    elif last['volume'] > avg_volume:
-        signal_strength += 1
-        reasons.append("Normal volume")
+        logger.info(f"{symbol}: {action} setup scored {confidence:.1f}%")
 
-    # Calculate final confidence
-    confidence = min(signal_strength, 100)
+        # Check minimum threshold
+        if confidence < self.min_confidence:
+            logger.info(f"   Below {self.min_confidence}% threshold ❌")
+            return None
 
-    logger.info(f"{symbol}: {action} setup scored {confidence:.1f}%")
+        logger.info(f"   ✅ SIGNAL QUALIFIED! {confidence:.1f}% confidence")
 
-    # Check minimum threshold
-    if confidence < self.min_confidence:
-        logger.info(f"   Below {self.min_confidence}% threshold ❌")
-        return None
+        # Calculate trade parameters (rest of your existing code)
+        current_price = last['close']
+        atr = last['atr']
 
-    logger.info(f"   ✅ SIGNAL QUALIFIED! {confidence:.1f}% confidence")
+        if self.account_balance < 100:
+            sl_multiplier = 1.5
+        else:
+            sl_multiplier = 2.0
 
-    # Calculate trade parameters (rest of your existing code)
-    current_price = last['close']
-    atr = last['atr']
+        if action == "BUY":
+            entry_price = current_price
+            stop_loss = current_price - (sl_multiplier * atr)
+            tp1, tp2, tp3 = RiskCalculator.calculate_tp_levels_for_small_account(
+                entry_price, stop_loss, action, atr, self.account_balance
+            )
+        else:
+            entry_price = current_price
+            stop_loss = current_price + (sl_multiplier * atr)
+            tp1, tp2, tp3 = RiskCalculator.calculate_tp_levels_for_small_account(
+                entry_price, stop_loss, action, atr, self.account_balance
+            )
 
-    if self.account_balance < 100:
-        sl_multiplier = 1.5
-    else:
-        sl_multiplier = 2.0
+        pip_size = 0.01 if symbol == 'XAUUSD' else 1.0
+        stop_loss_pips = abs(entry_price - stop_loss) / pip_size
+        tp1_pips = abs(tp1 - entry_price) / pip_size
+        tp2_pips = abs(tp2 - entry_price) / pip_size
+        tp3_pips = abs(tp3 - entry_price) / pip_size
 
-    if action == "BUY":
-        entry_price = current_price
-        stop_loss = current_price - (sl_multiplier * atr)
-        tp1, tp2, tp3 = RiskCalculator.calculate_tp_levels_for_small_account(
-            entry_price, stop_loss, action, atr, self.account_balance
-        )
-    else:
-        entry_price = current_price
-        stop_loss = current_price + (sl_multiplier * atr)
-        tp1, tp2, tp3 = RiskCalculator.calculate_tp_levels_for_small_account(
-            entry_price, stop_loss, action, atr, self.account_balance
+        lot_size, risk_amount = RiskCalculator.calculate_position_size(
+            self.account_balance, self.risk_percent, stop_loss_pips, symbol
         )
 
-    pip_size = 0.01 if symbol == 'XAUUSD' else 1.0
-    stop_loss_pips = abs(entry_price - stop_loss) / pip_size
-    tp1_pips = abs(tp1 - entry_price) / pip_size
-    tp2_pips = abs(tp2 - entry_price) / pip_size
-    tp3_pips = abs(tp3 - entry_price) / pip_size
+        breakeven_price = RiskCalculator.calculate_breakeven_price(entry_price, action, stop_loss)
+        rr_ratio = tp3_pips / stop_loss_pips if stop_loss_pips > 0 else 0
 
-    lot_size, risk_amount = RiskCalculator.calculate_position_size(
-        self.account_balance, self.risk_percent, stop_loss_pips, symbol
-    )
+        signal = TradeSignal(
+            symbol=symbol,
+            action=action,
+            confidence=confidence,
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            take_profit=tp3,
+            tp1=tp1,
+            tp2=tp2,
+            tp3=tp3,
+            risk_reward_ratio=rr_ratio,
+            timeframe=self.timeframe,
+            strategy_name="Institutional Multi-Indicator v8.0",
+            indicators={
+                'rsi': float(last['rsi']),
+                'macd': float(last['macd']),
+                'adx': float(last['adx']),
+                'stoch_k': float(last['stoch_k']),
+                'reasons': reasons
+            },
+            timestamp=datetime.now(pytz.UTC),
+            stop_loss_pips=stop_loss_pips,
+            tp1_pips=tp1_pips,
+            tp2_pips=tp2_pips,
+            tp3_pips=tp3_pips,
+            position_size=lot_size,
+            risk_amount_usd=risk_amount,
+            signal_id=f"{symbol}_{int(datetime.now().timestamp())}",
+            breakeven_price=breakeven_price
+        )
 
-    breakeven_price = RiskCalculator.calculate_breakeven_price(entry_price, action, stop_loss)
-    rr_ratio = tp3_pips / stop_loss_pips if stop_loss_pips > 0 else 0
+        return signal
 
-    signal = TradeSignal(
-        symbol=symbol,
-        action=action,
-        confidence=confidence,
-        entry_price=entry_price,
-        stop_loss=stop_loss,
-        take_profit=tp3,
-        tp1=tp1,
-        tp2=tp2,
-        tp3=tp3,
-        risk_reward_ratio=rr_ratio,
-        timeframe=self.timeframe,
-        strategy_name="Institutional Multi-Indicator v8.0",
-        indicators={
-            'rsi': float(last['rsi']),
-            'macd': float(last['macd']),
-            'adx': float(last['adx']),
-            'stoch_k': float(last['stoch_k']),
-            'reasons': reasons
-        },
-        timestamp=datetime.now(pytz.UTC),
-        stop_loss_pips=stop_loss_pips,
-        tp1_pips=tp1_pips,
-        tp2_pips=tp2_pips,
-        tp3_pips=tp3_pips,
-        position_size=lot_size,
-        risk_amount_usd=risk_amount,
-        signal_id=f"{symbol}_{int(datetime.now().timestamp())}",
-        breakeven_price=breakeven_price
-    )
+        def is_duplicate_signal(self, signal: TradeSignal) -> bool:
+            """Check for duplicate signals within last 2 hours"""
+            for recent in self.recent_signals:
+                if (recent.symbol == signal.symbol and 
+                    recent.action == signal.action and
+                    abs((signal.timestamp - recent.timestamp).total_seconds()) < 7200):
+                    return True
+            return False
 
-    return signal
+        def run(self):
+            """Run single analysis cycle - INSTITUTIONAL GRADE"""
+            logger.info("=" * 70)
+            logger.info("🚀 ELITE TRADING BOT v8.0 - INSTITUTIONAL GRADE")
+            logger.info("=" * 70)
+            logger.info(f"Analysis Time: {datetime.now(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            logger.info(f"Account: ${self.account_balance:.2f} | Risk: {self.risk_percent}%")
+            logger.info(f"Min Confidence: {self.min_confidence}% (STRICT)")
+            logger.info(f"WebSocket: ENABLED ✅ | News Monitor: {'ON' if self.check_news else 'OFF'}")
+            logger.info("=" * 70)
 
-    def is_duplicate_signal(self, signal: TradeSignal) -> bool:
-        """Check for duplicate signals within last 2 hours"""
-        for recent in self.recent_signals:
-            if (recent.symbol == signal.symbol and 
-                recent.action == signal.action and
-                abs((signal.timestamp - recent.timestamp).total_seconds()) < 7200):
-                return True
-        return False
+            signals_generated = 0
 
-    def run(self):
-        """Run single analysis cycle - INSTITUTIONAL GRADE"""
-        logger.info("=" * 70)
-        logger.info("🚀 ELITE TRADING BOT v8.0 - INSTITUTIONAL GRADE")
-        logger.info("=" * 70)
-        logger.info(f"Analysis Time: {datetime.now(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        logger.info(f"Account: ${self.account_balance:.2f} | Risk: {self.risk_percent}%")
-        logger.info(f"Min Confidence: {self.min_confidence}% (STRICT)")
-        logger.info(f"WebSocket: ENABLED ✅ | News Monitor: {'ON' if self.check_news else 'OFF'}")
-        logger.info("=" * 70)
+            for symbol in self.SYMBOLS:
+                try:
+                    logger.info(f"\n📊 Analyzing {symbol}...")
 
-        signals_generated = 0
+                    # 1. Check market hours (CRITICAL FOR GOLD)
+                    is_open, status = MarketHoursValidator.get_market_status(symbol)
+                    if not is_open:
+                        logger.warning(f"   ⚪ {status}")
+                        self.notifier.send_market_closed_alert(symbol, status)
+                        continue
 
-        for symbol in self.SYMBOLS:
-            try:
-                logger.info(f"\n📊 Analyzing {symbol}...")
+                    logger.info(f"   ✅ {status}")
 
-                # 1. Check market hours (CRITICAL FOR GOLD)
-                is_open, status = MarketHoursValidator.get_market_status(symbol)
-                if not is_open:
-                    logger.warning(f"   ⚪ {status}")
-                    self.notifier.send_market_closed_alert(symbol, status)
+                    # 2. Check for high-impact news
+                    if self.check_news:
+                        is_safe, upcoming_news = self.news_monitor.check_news_before_trade(symbol, hours_ahead=2)
+                        
+                        if not is_safe:
+                            logger.warning(f"   🚨 HIGH-IMPACT NEWS DETECTED - BLOCKING {symbol}")
+                            
+                            # Send news alert (only once per news event)
+                            news_ids = {f"{n.title}_{n.date.isoformat()}" for n in upcoming_news}
+                            if not news_ids.issubset(self.news_alerts_sent):
+                                self.notifier.send_news_alert(upcoming_news)
+                                self.news_alerts_sent.update(news_ids)
+                            continue
+                        
+                        if upcoming_news:
+                            logger.info(f"   ℹ️ News detected but >1hr away - Proceeding with caution")
+
+                    # 3. Analyze market
+                    signal = self.analyze_market(symbol)
+
+                    if signal and not self.is_duplicate_signal(signal):
+                        logger.info(f"✅ INSTITUTIONAL-GRADE SIGNAL GENERATED!")
+                        logger.info(f"   {signal.action} {symbol} @ {signal.confidence:.1f}%")
+                        logger.info(f"   Entry: {signal.entry_price:.5f}")
+                        logger.info(f"   SL: {signal.stop_loss:.5f} ({signal.stop_loss_pips:.1f} pips)")
+                        logger.info(f"   TP1/2/3: {signal.tp1_pips:.0f}/{signal.tp2_pips:.0f}/{signal.tp3_pips:.0f} pips")
+                        logger.info(f"   Position: {signal.position_size:.2f} lots")
+                        logger.info(f"   Risk: ${signal.risk_amount_usd:.2f}")
+                        logger.info(f"   R:R: 1:{signal.risk_reward_ratio:.2f}")
+
+                        self.recent_signals.append(signal)
+
+                        # Send to Telegram
+                        if self.notifier.send_signal(signal):
+                            logger.info(f"   ✅ Signal sent to Telegram successfully")
+                            signals_generated += 1
+                        else:
+                            logger.error(f"   ❌ Failed to send signal to Telegram")
+
+                    elif signal and self.is_duplicate_signal(signal):
+                        logger.info(f"   ⚠️ Duplicate signal detected - Skipped")
+                    else:
+                        logger.info(f"   ⚪ No {self.min_confidence}%+ confidence setup found")
+
+                except Exception as e:
+                    logger.error(f"❌ Error analyzing {symbol}: {e}", exc_info=True)
                     continue
 
-                logger.info(f"   ✅ {status}")
+            logger.info("\n" + "=" * 70)
+            logger.info(f"📊 ANALYSIS COMPLETE")
+            logger.info(f"   Signals Generated: {signals_generated}")
+            logger.info(f"   Symbols Analyzed: {len(self.SYMBOLS)}")
+            logger.info(f"   Quality Filter: {self.min_confidence}%+ only")
+            logger.info("=" * 70)
 
-                # 2. Check for high-impact news
-                if self.check_news:
-                    is_safe, upcoming_news = self.news_monitor.check_news_before_trade(symbol, hours_ahead=2)
-                    
-                    if not is_safe:
-                        logger.warning(f"   🚨 HIGH-IMPACT NEWS DETECTED - BLOCKING {symbol}")
-                        
-                        # Send news alert (only once per news event)
-                        news_ids = {f"{n.title}_{n.date.isoformat()}" for n in upcoming_news}
-                        if not news_ids.issubset(self.news_alerts_sent):
-                            self.notifier.send_news_alert(upcoming_news)
-                            self.news_alerts_sent.update(news_ids)
-                        continue
-                    
-                    if upcoming_news:
-                        logger.info(f"   ℹ️ News detected but >1hr away - Proceeding with caution")
-
-                # 3. Analyze market
-                signal = self.analyze_market(symbol)
-
-                if signal and not self.is_duplicate_signal(signal):
-                    logger.info(f"✅ INSTITUTIONAL-GRADE SIGNAL GENERATED!")
-                    logger.info(f"   {signal.action} {symbol} @ {signal.confidence:.1f}%")
-                    logger.info(f"   Entry: {signal.entry_price:.5f}")
-                    logger.info(f"   SL: {signal.stop_loss:.5f} ({signal.stop_loss_pips:.1f} pips)")
-                    logger.info(f"   TP1/2/3: {signal.tp1_pips:.0f}/{signal.tp2_pips:.0f}/{signal.tp3_pips:.0f} pips")
-                    logger.info(f"   Position: {signal.position_size:.2f} lots")
-                    logger.info(f"   Risk: ${signal.risk_amount_usd:.2f}")
-                    logger.info(f"   R:R: 1:{signal.risk_reward_ratio:.2f}")
-
-                    self.recent_signals.append(signal)
-
-                    # Send to Telegram
-                    if self.notifier.send_signal(signal):
-                        logger.info(f"   ✅ Signal sent to Telegram successfully")
-                        signals_generated += 1
-                    else:
-                        logger.error(f"   ❌ Failed to send signal to Telegram")
-
-                elif signal and self.is_duplicate_signal(signal):
-                    logger.info(f"   ⚠️ Duplicate signal detected - Skipped")
-                else:
-                    logger.info(f"   ⚪ No {self.min_confidence}%+ confidence setup found")
-
-            except Exception as e:
-                logger.error(f"❌ Error analyzing {symbol}: {e}", exc_info=True)
-                continue
-
-        logger.info("\n" + "=" * 70)
-        logger.info(f"📊 ANALYSIS COMPLETE")
-        logger.info(f"   Signals Generated: {signals_generated}")
-        logger.info(f"   Symbols Analyzed: {len(self.SYMBOLS)}")
-        logger.info(f"   Quality Filter: {self.min_confidence}%+ only")
-        logger.info("=" * 70)
-
-        return signals_generated
+            return signals_generated
 
 def main():
     """Main entry point for GitHub Actions"""
