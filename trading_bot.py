@@ -358,15 +358,17 @@ class TelegramNotifier:
         detailed = self.send_message(message, self.main_chat_id)
 
         simple_msg = f"""
-{emoji} <b>{signal.confidence:.0f}% {signal.action}</b>
+{emoji} {signal.action}</b>
 
 <b>{signal.symbol}</b>
 
 Entry: {signal.entry_price:.5f}
-SL: {signal.stop_loss:.5f} ({signal.stop_loss_pips:.0f}p)
-TPs: {signal.tp1_pips:.0f}/{signal.tp2_pips:.0f}/{signal.tp3_pips:.0f}p
+SL: {signal.stop_loss:.5f}
+TP1: {signal.tp1_pips:.5f} 🎯
+TP2: {signal.tp2_pips:.5f} 🎯🎯
+TP3: {signal.tp3_pips:.5f} 🎯🎯🎯
 
-Risk: ${signal.risk_amount_usd:.2f} | R:R 1:{signal.risk_reward_ratio:.1f}
+Risk/Reward: 1:{signal.risk_reward_ratio:.1f}
 """
         simple = self.send_message(simple_msg, self.simple_chat_id)
 
