@@ -1085,7 +1085,7 @@ def analyze_market(self, symbol: str) -> Optional[TradeSignal]:
     )
 
     return signal
-    
+
     def is_duplicate_signal(self, signal: TradeSignal) -> bool:
         """Check for duplicate signals within last 2 hours"""
         for recent in self.recent_signals:
@@ -1178,7 +1178,6 @@ def analyze_market(self, symbol: str) -> Optional[TradeSignal]:
 
         return signals_generated
 
-
 def main():
     """Main entry point for GitHub Actions"""
 
@@ -1217,7 +1216,7 @@ def main():
             min_confidence=min_confidence
         )
 
-        # Send startup notification
+# Startup message in your main() function with this:
         startup_msg = f"""
 🚀 <b>Elite Trading Bot v8.0 - INSTITUTIONAL GRADE</b>
 
@@ -1233,12 +1232,12 @@ def main():
 <b>🛡️ Protection Features:</b>
 ✅ Multi-indicator confluence (10 indicators)
 ✅ Institutional-grade trend analysis
-✅ Volume & momentum confirmation
+✅ Volume &amp; momentum confirmation
 ✅ Dynamic position sizing
 ✅ Market hours validation (No Gold weekends)
 ✅ HIGH-IMPACT news blocking
 ✅ Duplicate signal prevention
-✅ Small account protection (<$100)
+✅ Small account protection (under $100)
 ✅ Complete trade management plans
 
 <b>📊 Signal Quality Standards:</b>
@@ -1254,7 +1253,7 @@ def main():
         # Run analysis
         signals_count = bot.run()
 
-        # Send completion summary
+        # If signals generated:
         if signals_count > 0:
             summary_msg = f"""
 ✅ <b>Analysis Complete - {signals_count} Signal(s) Generated</b>
@@ -1292,7 +1291,7 @@ All assets scanned successfully. Current market conditions do not meet our insti
 • High-impact news (None blocking)
 • Technical confluence ({min_confidence}%+ required)
 • Multiple indicator confirmation
-• Volume & momentum validation
+• Volume &amp; momentum validation
 
 <b>💡 Strategy:</b>
 We prioritize quality over quantity. Only the highest probability setups with multiple confirmations are sent.
