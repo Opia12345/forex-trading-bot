@@ -629,7 +629,7 @@ class EliteTradingBot:
     def __init__(self, telegram_token: str, main_chat_id: str, simple_chat_id: str,
                  account_balance: float = 500.0, risk_percent: float = 2.0,
                  deriv_app_id: str = "1089", check_news: bool = True,
-                 min_confidence: float = 80.0):
+                 min_confidence: float = 75.0):
 
         self.notifier = TelegramNotifier(telegram_token, main_chat_id, simple_chat_id)
         self.data_fetcher = DerivDataFetcher(deriv_app_id)
@@ -1190,7 +1190,7 @@ def main():
     # Trading parameters
     account_balance = float(os.getenv('ACCOUNT_BALANCE', '500'))
     risk_percent = float(os.getenv('RISK_PERCENT', '2.0'))
-    min_confidence = float(os.getenv('MIN_CONFIDENCE', '80.0'))
+    min_confidence = float(os.getenv('MIN_CONFIDENCE', '75.0'))
 
     # Validation
     if not telegram_token or not main_chat_id or not simple_chat_id:
