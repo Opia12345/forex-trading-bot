@@ -749,7 +749,6 @@ class EliteTradingBot:
         return supertrend
 
     def analyze_market(self, symbol: str) -> Optional[TradeSignal]:
-    """Analyze market and generate high-confidence signals - FIXED SCORING"""
 
     # Fetch data
     df = self.data_fetcher.get_historical_data(symbol, self.timeframe, 500)
