@@ -188,7 +188,7 @@ jobs:
           fi
           
           # Validate supporting modules
-          for module in scripts/trade_journal.py scripts/position_manager.py; do
+          for module in scripts/trade-journal.py scripts/position-manager.py; do
             if [ -f "$module" ]; then
               python -m py_compile "$module"
               echo "✅ $module validated"
@@ -265,23 +265,24 @@ jobs:
             tail -n 30 production_trading_bot.log
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
-            # Check for signals in log
-            SIGNAL_COUNT=$(grep -c "Signal sent:" production_trading_bot.log || echo "0")
-            echo "signals_found=$SIGNAL_COUNT" >> $GITHUB_OUTPUT
+            SIGNAL_COUNT=$(grep -c "Signal sent:" production_trading_bot.log 2>/dev/null || echo "0")
+            # Ensure it's a valid number
+            SIGNAL_COUNT=${SIGNAL_COUNT:-0}
+            echo "signals_found=${SIGNAL_COUNT}" >> $GITHUB_OUTPUT
             
-            if [ "$SIGNAL_COUNT" -gt 0 ]; then
-              echo "✅ $SIGNAL_COUNT signal(s) detected in this run!"
+            if [ "${SIGNAL_COUNT}" -gt 0 ] 2>/dev/null; then
+              echo "✅ ${SIGNAL_COUNT} signal(s) detected in this run!"
               grep "Signal sent:" production_trading_bot.log
             else
               echo "ℹ️ No signals generated in this cycle"
             fi
             
-            # Check for errors
-            ERROR_COUNT=$(grep -ci "error" production_trading_bot.log || echo "0")
-            echo "errors_found=$ERROR_COUNT" >> $GITHUB_OUTPUT
+            ERROR_COUNT=$(grep -ci "error" production_trading_bot.log 2>/dev/null || echo "0")
+            ERROR_COUNT=${ERROR_COUNT:-0}
+            echo "errors_found=${ERROR_COUNT}" >> $GITHUB_OUTPUT
             
-            if [ "$ERROR_COUNT" -gt 0 ]; then
-              echo "⚠️ $ERROR_COUNT error(s) detected in log"
+            if [ "${ERROR_COUNT}" -gt 0 ] 2>/dev/null; then
+              echo "⚠️ ${ERROR_COUNT} error(s) detected in log"
             fi
           else
             echo "❌ Log file not found!"
@@ -305,10 +306,13 @@ jobs:
         if: success() && steps.market_check.outputs.skip_run != 'true'
         run: |
           SIGNALS="${{ steps.log_check.outputs.signals_found }}"
+          SIGNALS=${SIGNALS:-0}
           ERRORS="${{ steps.log_check.outputs.errors_found }}"
+          ERRORS=${ERRORS:-0}
           EXEC_TIME="${{ steps.bot_execution.outputs.execution_time }}"
+          EXEC_TIME=${EXEC_TIME:-0}
           
-          if [ "$SIGNALS" -gt 0 ]; then
+          if [ "${SIGNALS}" -gt 0 ] 2>/dev/null; then
             ICON="🎯"
             STATUS="<b>Signals Generated!</b>"
           else
@@ -319,13 +323,13 @@ jobs:
           MESSAGE="$ICON <b>Production Trading Bot v13.0</b>%0A%0A"
           MESSAGE="${MESSAGE}$STATUS%0A%0A"
           MESSAGE="${MESSAGE}<b>Summary:</b>%0A"
-          MESSAGE="${MESSAGE}• Signals: $SIGNALS%0A"
-          MESSAGE="${MESSAGE}• Errors: $ERRORS%0A"
+          MESSAGE="${MESSAGE}• Signals: ${SIGNALS}%0A"
+          MESSAGE="${MESSAGE}• Errors: ${ERRORS}%0A"
           MESSAGE="${MESSAGE}• Execution Time: ${EXEC_TIME}s%0A"
           MESSAGE="${MESSAGE}• Run: #${{ github.run_number }}%0A"
           MESSAGE="${MESSAGE}• Time: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')%0A%0A"
           
-          if [ "$SIGNALS" -eq 0 ]; then
+          if [ "${SIGNALS}" -eq 0 ] 2>/dev/null; then
             MESSAGE="${MESSAGE}<i>No trading opportunities detected this cycle</i>"
           fi
           
@@ -339,7 +343,9 @@ jobs:
         if: failure() && steps.market_check.outputs.skip_run != 'true'
         run: |
           ERRORS="${{ steps.log_check.outputs.errors_found }}"
+          ERRORS=${ERRORS:-0}
           EXEC_TIME="${{ steps.bot_execution.outputs.execution_time }}"
+          EXEC_TIME=${EXEC_TIME:-0}
           
           MESSAGE="🚨 <b>Production Trading Bot v13.0 Alert</b>%0A%0A"
           MESSAGE="${MESSAGE}❌ <b>Execution Failed</b>%0A%0A"
@@ -347,9 +353,9 @@ jobs:
           MESSAGE="${MESSAGE}• GitHub Run: #${{ github.run_number }}%0A"
           MESSAGE="${MESSAGE}• Time: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')%0A"
           MESSAGE="${MESSAGE}• Branch: ${{ github.ref_name }}%0A"
-          MESSAGE="${MESSAGE}• Errors in Log: $ERRORS%0A"
+          MESSAGE="${MESSAGE}• Errors in Log: ${ERRORS}%0A"
           
-          if [ -n "$EXEC_TIME" ]; then
+          if [ "${EXEC_TIME}" -gt 0 ] 2>/dev/null; then
             MESSAGE="${MESSAGE}• Execution Time: ${EXEC_TIME}s%0A"
           fi
           
