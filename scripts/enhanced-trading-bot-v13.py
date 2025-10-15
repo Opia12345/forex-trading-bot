@@ -14,6 +14,10 @@ from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 import pytz
+import requests
+import json
+import asyncio
+import websockets
 
 sys.path.append('scripts')
 
@@ -89,80 +93,655 @@ class TradeSignal:
     valid_until: datetime
 
 
-class TelegramNotifier:
-    """Placeholder - import from your original bot"""
-    def __init__(self, token, main_chat, simple_chat):
-        self.token = token
-        self.main_chat = main_chat
-        self.simple_chat = simple_chat
-    
-    def send_signal(self, signal):
-        logger.info(f"Sending signal: {signal.signal_id}")
-        return True
+@dataclass
+class NewsEvent:
+    """Economic news event"""
+    title: str
+    country: str
+    date: datetime
+    impact: str
+    currency: str
+    actual: str = ""
+    forecast: str = ""
+    previous: str = ""
 
+
+# ============================================================================
+# TELEGRAM NOTIFIER (Fixed)
+# ============================================================================
+
+class TelegramNotifier:
+    """
+    Handles Telegram notifications for trading signals
+    - Main chat: Detailed analysis with all indicators and levels
+    - Simple chat: Clean, simple signal format
+    """
+    
+    def __init__(self, token: str, main_chat_id: str, simple_chat_id: str):
+        self.token = token
+        self.main_chat = main_chat_id
+        self.simple_chat = simple_chat_id
+        self.base_url = f"https://api.telegram.org/bot{token}"
+    
+    def send_signal(self, signal) -> bool:
+        """
+        Send signal to BOTH chats:
+        - Main chat: Full detailed analysis
+        - Simple chat: Clean simple format
+        """
+        try:
+            # Send detailed message to MAIN CHAT
+            main_success = self._send_detailed_signal(signal, self.main_chat)
+            
+            # Send simple message to SIMPLE CHAT
+            simple_success = self._send_simple_signal(signal, self.simple_chat)
+            
+            if main_success and simple_success:
+                logger.info(f"✅ Signal sent to both chats: {signal.signal_id}")
+                return True
+            elif main_success:
+                logger.warning(f"⚠️ Signal sent to main chat only: {signal.signal_id}")
+                return True
+            else:
+                logger.error(f"❌ Failed to send signal: {signal.signal_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error sending signal: {e}")
+            return False
+    
+    def _send_detailed_signal(self, signal, chat_id: str) -> bool:
+        """Send detailed signal to main chat"""
+        
+        # Quality emoji
+        quality_emoji = {
+            "EXCELLENT": "🌟",
+            "STRONG": "⭐",
+            "GOOD": "✨"
+        }.get(signal.quality.value, "✨")
+        
+        # Signal type emoji
+        type_emoji = {
+            "SCALP": "⚡",
+            "DAY_TRADE": "📊",
+            "SWING": "📈"
+        }.get(signal.signal_type.value, "📊")
+        
+        message = f"""
+{quality_emoji} <b>TRADING SIGNAL</b> {quality_emoji}
+
+{type_emoji} <b>Type:</b> {signal.signal_type.value}
+💰 <b>Symbol:</b> {signal.symbol}
+🎯 <b>Action:</b> {signal.action}
+📊 <b>Confidence:</b> {signal.confidence:.1f}%
+
+<b>📍 ENTRY LEVELS</b>
+💵 Entry: <code>{signal.entry_price:.5f}</code>
+🛑 Stop Loss: <code>{signal.stop_loss:.5f}</code> ({signal.stop_loss_pips:.1f} pips)
+🎯 TP1: <code>{signal.take_profit_1:.5f}</code> ({signal.tp1_pips:.1f} pips)
+🎯 TP2: <code>{signal.take_profit_2:.5f}</code> ({signal.tp2_pips:.1f} pips)
+🎯 TP3: <code>{signal.take_profit_3:.5f}</code> ({signal.tp3_pips:.1f} pips)
+⚖️ Breakeven: <code>{signal.breakeven_price:.5f}</code>
+
+<b>💼 POSITION SIZING</b>
+📦 Lot Size: {signal.position_size:.2f}
+💰 Risk: ${signal.risk_amount_usd:.2f}
+📊 R:R Ratio: 1:{signal.risk_reward_ratio:.1f}
+
+<b>📊 MARKET CONTEXT</b>
+⏰ Session: {signal.trading_session}
+📈 HTF Trend: {signal.htf_trend}
+🎭 Phase: {signal.market_phase}
+⏱️ Timeframe: {signal.timeframe} / {signal.htf_timeframe}
+
+<b>✅ STRATEGY COMPONENTS</b>
+"""
+        
+        # Add strategy reasons
+        for reason in signal.strategy_components[:8]:  # Limit to 8 reasons
+            message += f"• {reason}\n"
+        
+        message += f"""
+<b>⚠️ RISK MANAGEMENT</b>
+• Close 50% at TP1, move SL to breakeven
+• Close 30% at TP2, activate trailing stop
+• Let remaining 20% run to TP3
+• Never risk more than allocated amount
+
+<i>Signal ID: {signal.signal_id}</i>
+<i>Valid until: {signal.valid_until.strftime('%H:%M UTC')}</i>
+"""
+        
+        return self._send_message(chat_id, message)
+    
+    def _send_simple_signal(self, signal, chat_id: str) -> bool:
+        """Send simple signal to simple chat"""
+        
+        # Action emoji
+        action_emoji = "🟢" if signal.action == "BUY" else "🔴"
+        
+        message = f"""
+{action_emoji} <b>{signal.action} {signal.symbol}</b>
+
+💵 Entry: <code>{signal.entry_price:.5f}</code>
+🛑 SL: <code>{signal.stop_loss:.5f}</code>
+🎯 TP1: <code>{signal.take_profit_1:.5f}</code>
+🎯 TP2: <code>{signal.take_profit_2:.5f}</code>
+🎯 TP3: <code>{signal.take_profit_3:.5f}</code>
+
+📊 Confidence: {signal.confidence:.0f}%
+⚡ Type: {signal.signal_type.value}
+💼 Size: {signal.position_size:.2f} lots
+"""
+        
+        return self._send_message(chat_id, message)
+    
+    def _send_message(self, chat_id: str, message: str) -> bool:
+        """Send message via Telegram API"""
+        try:
+            url = f"{self.base_url}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "HTML"
+            }
+            
+            response = requests.post(url, json=payload, timeout=10)
+            
+            if response.status_code == 200:
+                return True
+            else:
+                logger.error(f"Telegram API error: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error sending Telegram message: {e}")
+            return False
+    
+    def send_news_alert(self, news_events: List[NewsEvent]) -> bool:
+        """Send high-impact news alert to both chats"""
+        if not news_events:
+            return True
+        
+        message = f"""
+⚠️ <b>HIGH IMPACT NEWS ALERT</b>
+
+{news_events[0].title}
+
+Trading may be restricted during this period.
+"""
+        
+        main_sent = self._send_message(self.main_chat, message)
+        simple_sent = self._send_message(self.simple_chat, message)
+        
+        return main_sent or simple_sent
+
+
+# ============================================================================
+# DERIV DATA FETCHER
+# ============================================================================
 
 class DerivDataFetcher:
-    """Placeholder - import from your original bot"""
-    def __init__(self, app_id):
-        self.app_id = app_id
+    """Fetch real-time and historical data from Deriv API"""
     
-    def get_historical_data(self, symbol, timeframe, count):
-        logger.info(f"Fetching {symbol} {timeframe} data")
-        return None
+    SYMBOL_MAP = {
+        'XAUUSD': 'frxXAUUSD',
+        'BTCUSD': 'cryBTCUSD'
+    }
+    
+    TIMEFRAME_MAP = {
+        '1m': 60,
+        '5m': 300,
+        '15m': 900,
+        '30m': 1800,
+        '1h': 3600,
+        '4h': 14400,
+        '1d': 86400
+    }
+    
+    def __init__(self, app_id: str = "1089"):
+        self.app_id = app_id
+        self.ws_url = f"wss://ws.derivws.com/websockets/v3?app_id={app_id}"
+    
+    async def _fetch_candles_async(self, symbol: str, granularity: int, count: int) -> Optional[Dict]:
+        """Fetch candles via WebSocket (async)"""
+        try:
+            async with websockets.connect(self.ws_url, ping_interval=30, close_timeout=10) as ws:
+                end_time = int(datetime.now().timestamp())
+                start_time = end_time - (count * granularity)
+                
+                request = {
+                    "ticks_history": symbol,
+                    "adjust_start_time": 1,
+                    "count": count,
+                    "end": "latest",
+                    "start": start_time,
+                    "style": "candles",
+                    "granularity": granularity
+                }
+                
+                await ws.send(json.dumps(request))
+                response = await asyncio.wait_for(ws.recv(), timeout=30)
+                data = json.loads(response)
+                
+                if 'error' in data:
+                    logger.error(f"Deriv API error: {data['error']}")
+                    return None
+                
+                return data
+        
+        except asyncio.TimeoutError:
+            logger.error(f"WebSocket timeout for {symbol}")
+            return None
+        except Exception as e:
+            logger.error(f"WebSocket error: {e}")
+            return None
+    
+    def get_historical_data(self, symbol: str, timeframe: str = '1h', count: int = 500) -> Optional[pd.DataFrame]:
+        """Fetch historical candles and return as DataFrame"""
+        
+        deriv_symbol = self.SYMBOL_MAP.get(symbol)
+        if not deriv_symbol:
+            logger.error(f"Invalid symbol: {symbol}")
+            return None
+        
+        granularity = self.TIMEFRAME_MAP.get(timeframe)
+        if not granularity:
+            logger.error(f"Invalid timeframe: {timeframe}")
+            return None
+        
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                response = loop.run_until_complete(
+                    self._fetch_candles_async(deriv_symbol, granularity, count)
+                )
+            finally:
+                loop.close()
+            
+            if not response or 'candles' not in response:
+                logger.error(f"No candle data returned for {symbol}")
+                return None
+            
+            candles = response['candles']
+            
+            min_candles = 50 if timeframe == '5m' else 100
+            if not candles or len(candles) < min_candles:
+                logger.error(f"Insufficient candle data: {len(candles) if candles else 0}")
+                return None
+            
+            df = pd.DataFrame(candles)
+            
+            if 'epoch' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['epoch'], unit='s')
+                df.set_index('timestamp', inplace=True)
+            
+            for col in ['open', 'high', 'low', 'close']:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            df = df.dropna(subset=['open', 'high', 'low', 'close'])
+            
+            if len(df) < min_candles:
+                logger.error(f"Insufficient valid data after cleaning: {len(df)}")
+                return None
+            
+            logger.info(f"✅ Fetched {len(df)} candles for {symbol} ({timeframe})")
+            return df
+        
+        except Exception as e:
+            logger.error(f"Error fetching {symbol} data: {e}")
+            return None
 
+
+# ============================================================================
+# NEWS MONITOR
+# ============================================================================
 
 class NewsMonitor:
-    """Placeholder - import from your original bot"""
-    def __init__(self, buffer_minutes=60):
+    """Monitor high-impact economic news with caching"""
+    
+    def __init__(self, buffer_minutes: int = 60):
+        self.forex_factory_url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
         self.buffer_minutes = buffer_minutes
+        self.cache_duration = 1800  # 30 minutes
+        self.last_fetch = None
+        self.cached_events: List[NewsEvent] = []
+    
+    def fetch_news_events(self) -> List[NewsEvent]:
+        """Fetch upcoming high-impact news events"""
+        if self.last_fetch and (datetime.now() - self.last_fetch).seconds < self.cache_duration:
+            return self.cached_events
+        
+        try:
+            response = requests.get(self.forex_factory_url, timeout=15)
+            if response.status_code != 200:
+                logger.warning(f"News API returned status {response.status_code}")
+                return self.cached_events
+            
+            data = response.json()
+            events = []
+            
+            for item in data:
+                try:
+                    impact = item.get('impact', '').upper()
+                    if impact != 'HIGH':
+                        continue
+                    
+                    date_str = item.get('date', '')
+                    if not date_str:
+                        continue
+                    
+                    event_date = datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S%z')
+                    
+                    events.append(NewsEvent(
+                        title=item.get('title', 'Unknown'),
+                        country=item.get('country', 'Unknown'),
+                        date=event_date,
+                        impact=impact,
+                        currency=item.get('currency', ''),
+                        actual=item.get('actual', ''),
+                        forecast=item.get('forecast', ''),
+                        previous=item.get('previous', '')
+                    ))
+                except Exception:
+                    continue
+            
+            self.cached_events = events
+            self.last_fetch = datetime.now()
+            logger.info(f"✅ Fetched {len(events)} HIGH-impact news events")
+            return events
+        
+        except Exception as e:
+            logger.error(f"News fetch error: {e}")
+            return self.cached_events
+    
+    def check_news_safety(self, symbol: str, signal_type: SignalType) -> Tuple[bool, List[NewsEvent]]:
+        """Check if it's safe to trade (no news within buffer period)"""
+        events = self.fetch_news_events()
+        now = datetime.now(pytz.UTC)
+        
+        if signal_type == SignalType.SCALP:
+            buffer_minutes = 30
+        elif signal_type == SignalType.DAY_TRADE:
+            buffer_minutes = 45
+        else:
+            buffer_minutes = 60
+        
+        buffer_end = now + timedelta(minutes=buffer_minutes)
+        
+        if symbol == 'XAUUSD':
+            relevant_currencies = ['USD', 'EUR', 'GBP']
+        elif symbol == 'BTCUSD':
+            relevant_currencies = ['USD']
+        else:
+            return True, []
+        
+        upcoming_news = []
+        for event in events:
+            if event.currency in relevant_currencies:
+                if now <= event.date <= buffer_end:
+                    upcoming_news.append(event)
+        
+        is_safe = len(upcoming_news) == 0
+        return is_safe, upcoming_news
 
+
+# ============================================================================
+# MARKET HOURS VALIDATOR
+# ============================================================================
 
 class MarketHoursValidator:
-    """Placeholder - import from your original bot"""
-    @staticmethod
-    def get_market_status(symbol):
-        return True, "Market Open"
+    """Validate trading hours and identify sessions"""
     
     @staticmethod
-    def get_trading_session():
-        return "London", 100.0
+    def is_forex_open(dt: datetime = None) -> Tuple[bool, str]:
+        """Check Forex market hours"""
+        if dt is None:
+            dt = datetime.now(pytz.UTC)
+        
+        weekday = dt.weekday()
+        hour = dt.hour
+        
+        if weekday == 5:
+            return False, "Forex closed (Saturday)"
+        
+        if weekday == 6:
+            if hour < 22:
+                return False, "Forex closed (Sunday before 22:00 UTC)"
+            return True, "Forex open (Sunday evening)"
+        
+        if weekday == 4 and hour >= 22:
+            return False, "Forex closed (Friday after 22:00 UTC)"
+        
+        return True, "Forex market open"
+    
+    @staticmethod
+    def is_crypto_open(dt: datetime = None) -> Tuple[bool, str]:
+        """Crypto markets are 24/7"""
+        return True, "Crypto market open (24/7)"
+    
+    @staticmethod
+    def get_market_status(symbol: str) -> Tuple[bool, str]:
+        """Get market status for specific symbol"""
+        if symbol == 'XAUUSD':
+            return MarketHoursValidator.is_forex_open()
+        elif symbol == 'BTCUSD':
+            return MarketHoursValidator.is_crypto_open()
+        return True, "Market status unknown"
+    
+    @staticmethod
+    def get_trading_session(dt: datetime = None) -> Tuple[str, float]:
+        """Get current trading session and liquidity score"""
+        if dt is None:
+            dt = datetime.now(pytz.UTC)
+        
+        hour = dt.hour
+        
+        if 0 <= hour < 8:
+            return "Asian", 40.0
+        
+        if 8 <= hour < 13:
+            return "London", 80.0
+        
+        if 13 <= hour < 16:
+            return "London/NY Overlap", 100.0
+        
+        if 16 <= hour < 21:
+            return "New York", 85.0
+        
+        return "After Hours", 30.0
 
+
+# ============================================================================
+# TECHNICAL INDICATORS
+# ============================================================================
 
 class TechnicalIndicators:
-    """Placeholder - import from your original bot"""
+    """Calculate technical indicators"""
+    
     @staticmethod
-    def add_all_indicators(df):
+    def calculate_ema(series: pd.Series, period: int) -> pd.Series:
+        """Calculate Exponential Moving Average"""
+        return series.ewm(span=period, adjust=False).mean()
+    
+    @staticmethod
+    def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
+        """Calculate Relative Strength Index"""
+        delta = series.diff()
+        gain = delta.where(delta > 0, 0).rolling(window=period).mean()
+        loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi
+    
+    @staticmethod
+    def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Calculate Average True Range"""
+        high_low = df['high'] - df['low']
+        high_close = np.abs(df['high'] - df['close'].shift())
+        low_close = np.abs(df['low'] - df['close'].shift())
+        true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        atr = true_range.rolling(window=period).mean()
+        return atr
+    
+    @staticmethod
+    def calculate_adx(df: pd.DataFrame, period: int = 14) -> Tuple[pd.Series, pd.Series, pd.Series]:
+        """Calculate ADX, +DI, -DI"""
+        tr = TechnicalIndicators.calculate_atr(df, period=1)
+        
+        high_diff = df['high'].diff()
+        low_diff = -df['low'].diff()
+        
+        plus_dm = high_diff.where((high_diff > low_diff) & (high_diff > 0), 0)
+        minus_dm = low_diff.where((low_diff > high_diff) & (low_diff > 0), 0)
+        
+        atr = tr.rolling(window=period).mean()
+        plus_di = 100 * (plus_dm.rolling(window=period).mean() / atr)
+        minus_di = 100 * (minus_dm.rolling(window=period).mean() / atr)
+        
+        dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
+        adx = dx.rolling(window=period).mean()
+        
+        return adx, plus_di, minus_di
+    
+    @staticmethod
+    def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
+        """Add all technical indicators to DataFrame"""
+        df['ema_9'] = TechnicalIndicators.calculate_ema(df['close'], 9)
+        df['ema_21'] = TechnicalIndicators.calculate_ema(df['close'], 21)
+        df['ema_50'] = TechnicalIndicators.calculate_ema(df['close'], 50)
+        df['ema_200'] = TechnicalIndicators.calculate_ema(df['close'], 200)
+        
+        df['rsi'] = TechnicalIndicators.calculate_rsi(df['close'], 14)
+        df['atr'] = TechnicalIndicators.calculate_atr(df, 14)
+        df['adx'], df['plus_di'], df['minus_di'] = TechnicalIndicators.calculate_adx(df, 14)
+        
+        df = df.fillna(method='ffill').fillna(method='bfill')
+        
         return df
 
 
+# ============================================================================
+# MARKET STRUCTURE ANALYZER
+# ============================================================================
+
 class MarketStructureAnalyzer:
-    """Placeholder - import from your original bot"""
-    @staticmethod
-    def determine_trend_direction(df):
-        return TrendDirection.BULLISH
-
-
-class RiskCalculator:
-    """Placeholder - import from your original bot"""
-    @staticmethod
-    def calculate_trade_levels(price, atr, action, symbol, balance, signal_type):
-        return {
-            'entry': price,
-            'stop_loss': price - atr if action == "BUY" else price + atr,
-            'tp1': price + atr if action == "BUY" else price - atr,
-            'tp2': price + atr * 2 if action == "BUY" else price - atr * 2,
-            'tp3': price + atr * 3 if action == "BUY" else price - atr * 3,
-            'breakeven': price,
-            'sl_pips': 15.0,
-            'tp1_pips': 20.0,
-            'tp2_pips': 40.0,
-            'tp3_pips': 60.0,
-            'rr_ratio': 2.0
-        }
+    """Analyze market structure and identify trends"""
     
     @staticmethod
-    def calculate_position_size(balance, risk_pct, sl_pips, symbol):
-        return 0.01, balance * (risk_pct / 100)
+    def determine_trend_direction(df: pd.DataFrame) -> TrendDirection:
+        """Determine overall trend direction"""
+        last = df.iloc[-1]
+        
+        ema_score = 0
+        if last['ema_9'] > last['ema_21'] > last['ema_50']:
+            ema_score = 3
+        elif last['ema_9'] > last['ema_21']:
+            ema_score = 2
+        elif last['ema_9'] < last['ema_21'] < last['ema_50']:
+            ema_score = -3
+        elif last['ema_9'] < last['ema_21']:
+            ema_score = -2
+        
+        if ema_score >= 2:
+            return TrendDirection.STRONG_BULLISH if ema_score == 3 else TrendDirection.BULLISH
+        elif ema_score <= -2:
+            return TrendDirection.STRONG_BEARISH if ema_score == -3 else TrendDirection.BEARISH
+        else:
+            return TrendDirection.NEUTRAL
+
+
+# ============================================================================
+# RISK CALCULATOR
+# ============================================================================
+
+class RiskCalculator:
+    """Calculate position sizing and risk management"""
+    
+    @staticmethod
+    def calculate_position_size(balance: float, risk_percent: float, 
+                                 sl_pips: float, symbol: str) -> Tuple[float, float]:
+        """Calculate position size"""
+        risk_amount = balance * (risk_percent / 100.0)
+        pip_value = 10.0
+        
+        if sl_pips <= 0:
+            return 0.01, risk_amount
+        
+        lot_size = risk_amount / (sl_pips * pip_value)
+        
+        if balance < 100:
+            lot_size = max(0.01, min(lot_size, 0.05))
+        elif balance < 500:
+            lot_size = max(0.01, min(lot_size, 0.2))
+        elif balance < 1000:
+            lot_size = max(0.01, min(lot_size, 0.5))
+        else:
+            lot_size = max(0.01, min(lot_size, 2.0))
+        
+        lot_size = round(lot_size, 2)
+        actual_risk = lot_size * sl_pips * pip_value
+        
+        return lot_size, actual_risk
+    
+    @staticmethod
+    def calculate_trade_levels(current_price: float, atr: float, action: str,
+                                symbol: str, balance: float, signal_type: SignalType) -> Dict:
+        """Calculate trade levels based on signal type"""
+        if signal_type == SignalType.SCALP:
+            sl_multiplier = 1.0
+            tp1_multiplier = 1.5
+            tp2_multiplier = 2.5
+            tp3_multiplier = 3.5
+        elif signal_type == SignalType.DAY_TRADE:
+            sl_multiplier = 1.5
+            tp1_multiplier = 2.5
+            tp2_multiplier = 4.0
+            tp3_multiplier = 6.0
+        else:  # SWING
+            sl_multiplier = 2.0
+            tp1_multiplier = 3.0
+            tp2_multiplier = 5.0
+            tp3_multiplier = 7.5
+        
+        if action == "BUY":
+            entry = current_price
+            stop_loss = entry - (sl_multiplier * atr)
+            tp1 = entry + (tp1_multiplier * atr)
+            tp2 = entry + (tp2_multiplier * atr)
+            tp3 = entry + (tp3_multiplier * atr)
+            breakeven = entry + (0.1 * (entry - stop_loss))
+        else:
+            entry = current_price
+            stop_loss = entry + (sl_multiplier * atr)
+            tp1 = entry - (tp1_multiplier * atr)
+            tp2 = entry - (tp2_multiplier * atr)
+            tp3 = entry - (tp3_multiplier * atr)
+            breakeven = entry - (0.1 * (stop_loss - entry))
+        
+        pip_size = 0.01 if symbol == 'XAUUSD' else 1.0
+        sl_pips = abs(entry - stop_loss) / pip_size
+        tp1_pips = abs(tp1 - entry) / pip_size
+        tp2_pips = abs(tp2 - entry) / pip_size
+        tp3_pips = abs(tp3 - entry) / pip_size
+        
+        rr_ratio = tp3_pips / sl_pips if sl_pips > 0 else 0
+        
+        return {
+            'entry': entry,
+            'stop_loss': stop_loss,
+            'tp1': tp1,
+            'tp2': tp2,
+            'tp3': tp3,
+            'breakeven': breakeven,
+            'sl_pips': sl_pips,
+            'tp1_pips': tp1_pips,
+            'tp2_pips': tp2_pips,
+            'tp3_pips': tp3_pips,
+            'rr_ratio': rr_ratio
+        }
 
 
 # ============================================================================
@@ -170,40 +749,30 @@ class RiskCalculator:
 # ============================================================================
 
 class ExecutionModel:
-    """
-    Models realistic trade execution with slippage and spread
-    """
+    """Models realistic trade execution with slippage and spread"""
     
     @staticmethod
     def apply_slippage(price: float, action: str, symbol: str, 
                        signal_type, liquidity: float) -> Tuple[float, float]:
-        """
-        Apply realistic slippage based on signal type and liquidity
-        
-        Returns: (executed_price, slippage_pips)
-        """
-        # Base slippage in pips
+        """Apply realistic slippage based on signal type and liquidity"""
         if signal_type == SignalType.SCALP:
-            base_slippage = 2.0  # Scalps get more slippage
+            base_slippage = 2.0
         elif signal_type == SignalType.DAY_TRADE:
             base_slippage = 1.5
         else:
             base_slippage = 1.0
         
-        # Adjust for liquidity
         liquidity_factor = 1.0
         if liquidity < 60:
-            liquidity_factor = 1.5  # 50% more slippage in low liquidity
+            liquidity_factor = 1.5
         elif liquidity >= 100:
-            liquidity_factor = 0.7  # 30% less slippage in peak liquidity
+            liquidity_factor = 0.7
         
         total_slippage_pips = base_slippage * liquidity_factor
         
-        # Convert to price
         pip_size = 0.01 if symbol == 'XAUUSD' else 1.0
         slippage_price = total_slippage_pips * pip_size
         
-        # Apply slippage (always against the trader)
         if action == "BUY":
             executed_price = price + slippage_price
         else:
@@ -214,13 +783,11 @@ class ExecutionModel:
     @staticmethod
     def get_spread(symbol: str, liquidity: float) -> float:
         """Get current spread in pips"""
-        # Base spreads
         base_spread = {
-            'XAUUSD': 3.0,  # 3 pips typical
-            'BTCUSD': 5.0   # 5 pips typical
+            'XAUUSD': 3.0,
+            'BTCUSD': 5.0
         }.get(symbol, 2.0)
         
-        # Widen spread in low liquidity
         if liquidity < 60:
             base_spread *= 1.5
         
@@ -238,8 +805,6 @@ class SimplifiedSignalScorer:
     - RSI (momentum)
     - ADX (trend strength)
     - ATR (volatility)
-    
-    Removes: MACD, Bollinger Bands, Stochastic to avoid overfitting
     """
     
     MAX_SCORE = 100.0
@@ -258,7 +823,6 @@ class SimplifiedSignalScorer:
         last_trend = df_trend.iloc[-1]
         
         if action == "BUY":
-            # Entry timeframe
             if last_entry['ema_9'] > last_entry['ema_21'] > last_entry['ema_50']:
                 score += 15.0
                 reasons.append("✅ Perfect EMA alignment (entry)")
@@ -268,7 +832,6 @@ class SimplifiedSignalScorer:
             else:
                 return 0.0, ["❌ No bullish EMA trend"]
             
-            # Higher timeframe
             if last_trend['ema_9'] > last_trend['ema_21'] > last_trend['ema_50']:
                 score += 20.0
                 reasons.append("✅ HTF EMA aligned")
@@ -396,10 +959,7 @@ class SimplifiedSignalScorer:
     @staticmethod
     def calculate_confidence(df_entry: pd.DataFrame, df_trend: pd.DataFrame, action: str,
                             session: str, liquidity: float) -> Tuple[float, List[str]]:
-        """
-        Calculate confidence using only 4 core indicators
-        Total: 100 points (35 + 25 + 25 + 15)
-        """
+        """Calculate confidence using only 4 core indicators"""
         all_reasons = []
         total_score = 0.0
         
@@ -495,13 +1055,15 @@ class ProductionTradingBot:
         logger.info(f"ANALYZING {symbol} - {signal_type.value}")
         logger.info(f"{'='*60}")
         
-        # ... existing code for market hours, session, news checks ...
-        
+        # Market hours check
         is_open, market_status = MarketHoursValidator.get_market_status(symbol)
         if not is_open:
             logger.info(f"⚪ {market_status}")
             return None
         
+        logger.info(f"✅ {market_status}")
+        
+        # Session check
         session, liquidity = MarketHoursValidator.get_trading_session()
         logger.info(f"📍 {session} session (liquidity: {liquidity:.0f}%)")
         
@@ -509,8 +1071,19 @@ class ProductionTradingBot:
             logger.info("❌ Liquidity too low for scalping")
             return None
         
-        # ... existing code for data fetching and indicator calculation ...
+        # News check
+        if self.enable_news_filter:
+            is_safe, upcoming_news = self.news_monitor.check_news_safety(symbol, signal_type)
+            if not is_safe:
+                logger.warning(f"🚨 HIGH-IMPACT NEWS - BLOCKING")
+                news_id = f"{upcoming_news[0].title}_{upcoming_news[0].date.isoformat()}"
+                if news_id not in self.news_alerts_sent:
+                    self.notifier.send_news_alert(upcoming_news)
+                    self.news_alerts_sent.add(news_id)
+                return None
+            logger.info("✅ No high-impact news")
         
+        # Timeframe selection
         if signal_type == SignalType.SCALP:
             entry_tf, trend_tf = '5m', '15m'
             entry_count, trend_count = 200, 200
@@ -521,12 +1094,16 @@ class ProductionTradingBot:
             entry_tf, trend_tf = '1h', '4h'
             entry_count, trend_count = 500, 200
         
+        logger.info(f"📥 Fetching {entry_tf} and {trend_tf} data...")
         df_entry = self.data_fetcher.get_historical_data(symbol, entry_tf, entry_count)
         df_trend = self.data_fetcher.get_historical_data(symbol, trend_tf, trend_count)
         
         if df_entry is None or df_trend is None:
+            logger.error("❌ Failed to fetch data")
             return None
         
+        # Calculate indicators
+        logger.info("🔧 Calculating indicators...")
         df_entry = TechnicalIndicators.add_all_indicators(df_entry)
         df_trend = TechnicalIndicators.add_all_indicators(df_trend)
         
@@ -559,6 +1136,8 @@ class ProductionTradingBot:
             logger.info(f"❌ Below {min_conf}% threshold")
             return None
         
+        logger.info(f"✅ SIGNAL QUALIFIED ({confidence:.1f}%)")
+        
         # Calculate trade levels
         last_candle = df_entry.iloc[-1]
         current_price = last_candle['close']
@@ -568,6 +1147,7 @@ class ProductionTradingBot:
             current_price, atr, action, symbol, self.account_balance, signal_type
         )
         
+        # Apply slippage
         executed_entry, slippage_pips = ExecutionModel.apply_slippage(
             levels['entry'], action, symbol, signal_type, liquidity
         )
@@ -582,14 +1162,21 @@ class ProductionTradingBot:
             self.account_balance, self.risk_percent, levels['sl_pips'], symbol
         )
         
-        # Create signal (similar to before but with slippage-adjusted entry)
-        signal_id = f"{symbol}_{signal_type.value}_{int(datetime.now().timestamp())}"
-        
-        # ... rest of signal creation code ...
-        
+        # Determine quality
         quality = SignalQuality.EXCELLENT if confidence >= 90 else (
             SignalQuality.STRONG if confidence >= 80 else SignalQuality.GOOD
         )
+        
+        # Create signal
+        signal_id = f"{symbol}_{signal_type.value}_{int(datetime.now().timestamp())}"
+        timestamp = datetime.now(pytz.UTC)
+        
+        validity_hours = {
+            SignalType.SCALP: 1,
+            SignalType.DAY_TRADE: 2,
+            SignalType.SWING: 4
+        }[signal_type]
+        valid_until = timestamp + timedelta(hours=validity_hours)
         
         signal = TradeSignal(
             signal_id=signal_id,
@@ -621,10 +1208,11 @@ class ProductionTradingBot:
             trading_session=session,
             strategy_components=reasons,
             technical_summary={},
-            timestamp=datetime.now(pytz.UTC),
-            valid_until=datetime.now(pytz.UTC) + timedelta(hours=2)
+            timestamp=timestamp,
+            valid_until=valid_until
         )
         
+        # Log to journal
         trade_record = TradeRecord(
             signal_id=signal.signal_id,
             symbol=signal.symbol,
@@ -695,6 +1283,9 @@ class ProductionTradingBot:
         return False
 
 
+# ============================================================================
+# MAIN ENTRY POINT
+# ============================================================================
 
 def main():
     """Main entry point"""
