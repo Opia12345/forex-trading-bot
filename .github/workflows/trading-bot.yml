@@ -70,23 +70,23 @@ jobs:
       - name: Display bot configuration
         run: |
           echo "╔══════════════════════════════════════════════════════════════════╗"
-          echo "║         🚀 Production Trading Bot v13.0                         ║"
+          echo "║           🚀 Production Trading Bot v13.0                        ║"
           echo "╚══════════════════════════════════════════════════════════════════╝"
           echo ""
           echo "Configuration:"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  Python Version:    $(python --version)"
-          echo "  Symbols:           XAUUSD (Gold), BTCUSD (Bitcoin)"
-          echo "  Indicators:        EMA, RSI, ADX, ATR (Simplified)"
-          echo "  Signal Types:      Scalp, Day Trade, Swing"
-          echo "  Min Confidence:    70-80% (Signal Type Dependent)"
-          echo "  Features:          Slippage Modeling, Performance Tracking"
-          echo "  Position Mgmt:     Trailing Stops, Partial Exits"
-          echo "  Data Source:       Deriv API (Real-time)"
-          echo "  Frequency:         Every hour (on the hour)"
-          echo "  Execution Time:    $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
-          echo "  GitHub Run:        #${{ github.run_number }}"
-          echo "  Debug Mode:        ${{ inputs.debug_mode }}"
+          echo "  Python Version:     $(python --version)"
+          echo "  Symbols:            XAUUSD (Gold), BTCUSD (Bitcoin)"
+          echo "  Indicators:         EMA, RSI, ADX, ATR (Simplified)"
+          echo "  Signal Types:       Scalp, Day Trade, Swing"
+          echo "  Min Confidence:     70-80% (Signal Type Dependent)"
+          echo "  Features:           Slippage Modeling, Performance Tracking"
+          echo "  Position Mgmt:      Trailing Stops, Partial Exits"
+          echo "  Data Source:        Deriv API (Real-time)"
+          echo "  Frequency:          Every hour (on the hour)"
+          echo "  Execution Time:     $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "  GitHub Run:         #${{ github.run_number }}"
+          echo "  Debug Mode:         ${{ inputs.debug_mode }}"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
       
@@ -143,11 +143,16 @@ jobs:
           echo "Current UTC Hour: $CURRENT_HOUR"
           echo "Current Day: $CURRENT_DAY (1=Mon, 7=Sun)"
           
+          # Use EOF delimiter format to set outputs safely
+          DELIMITER=$(openssl rand -hex 8) # Generate a unique delimiter
+          
           # Skip during weekend (Saturday-Sunday)
           if [ "$CURRENT_DAY" -eq 6 ] || [ "$CURRENT_DAY" -eq 7 ]; then
             if [ "${{ inputs.force_run }}" != "true" ]; then
               echo "⏸️ Weekend detected - skipping run (low liquidity)"
-              echo "skip_run=true" >> $GITHUB_OUTPUT
+              echo "skip_run<<$DELIMITER" >> $GITHUB_OUTPUT
+              echo "true" >> $GITHUB_OUTPUT
+              echo "$DELIMITER" >> $GITHUB_OUTPUT
               exit 0
             else
               echo "⚠️ Weekend but force_run enabled"
@@ -158,7 +163,9 @@ jobs:
           if [ "$CURRENT_HOUR" -ge 22 ] || [ "$CURRENT_HOUR" -le 2 ]; then
             if [ "${{ inputs.force_run }}" != "true" ]; then
               echo "⏸️ Low liquidity hours - skipping run"
-              echo "skip_run=true" >> $GITHUB_OUTPUT
+              echo "skip_run<<$DELIMITER" >> $GITHUB_OUTPUT
+              echo "true" >> $GITHUB_OUTPUT
+              echo "$DELIMITER" >> $GITHUB_OUTPUT
               exit 0
             else
               echo "⚠️ Low liquidity hours but force_run enabled"
@@ -166,7 +173,9 @@ jobs:
           fi
           
           echo "✅ Market conditions suitable for trading"
-          echo "skip_run=false" >> $GITHUB_OUTPUT
+          echo "skip_run<<$DELIMITER" >> $GITHUB_OUTPUT
+          echo "false" >> $GITHUB_OUTPUT
+          echo "$DELIMITER" >> $GITHUB_OUTPUT
       
       - name: Validate bot script
         if: steps.market_check.outputs.skip_run != 'true'
@@ -222,6 +231,9 @@ jobs:
           RETRY_DELAY=30
           attempt=1
           
+          # Generate a unique delimiter
+          DELIMITER=$(openssl rand -hex 8)
+
           while [ $attempt -le $MAX_RETRIES ]; do
             echo "Attempt $attempt/$MAX_RETRIES..."
             START_TIME=$(date +%s)
@@ -231,11 +243,18 @@ jobs:
             
             END_TIME=$(date +%s)
             DURATION=$((END_TIME - START_TIME))
-            echo "execution_time=$DURATION" >> $GITHUB_OUTPUT
+
+            # FIX: Use delimiter format to set output for execution_time
+            echo "execution_time<<$DELIMITER" >> $GITHUB_OUTPUT
+            echo "$DURATION" >> $GITHUB_OUTPUT
+            echo "$DELIMITER" >> $GITHUB_OUTPUT
             
             if [ $EXIT_CODE -eq 0 ]; then
               echo "✅ Analysis completed successfully in ${DURATION}s"
-              echo "success=true" >> $GITHUB_OUTPUT
+              # FIX: Use delimiter format to set output for success
+              echo "success<<$DELIMITER" >> $GITHUB_OUTPUT
+              echo "true" >> $GITHUB_OUTPUT
+              echo "$DELIMITER" >> $GITHUB_OUTPUT
               exit 0
             else
               echo "❌ Attempt $attempt failed with exit code: $EXIT_CODE"
@@ -250,7 +269,10 @@ jobs:
           done
           
           echo "❌ All $MAX_RETRIES attempts failed"
-          echo "success=false" >> $GITHUB_OUTPUT
+          # FIX: Use delimiter format to set output for success
+          echo "success<<$DELIMITER" >> $GITHUB_OUTPUT
+          echo "false" >> $GITHUB_OUTPUT
+          echo "$DELIMITER" >> $GITHUB_OUTPUT
           exit 1
         timeout-minutes: 40
       
@@ -258,6 +280,9 @@ jobs:
         if: always() && steps.market_check.outputs.skip_run != 'true'
         id: log_check
         run: |
+          # Generate a unique delimiter
+          DELIMITER=$(openssl rand -hex 8)
+
           if [ -f "production_trading_bot.log" ]; then
             echo "📄 Log file generated successfully"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -268,7 +293,11 @@ jobs:
             SIGNAL_COUNT=$(grep -c "Signal sent:" production_trading_bot.log 2>/dev/null || echo "0")
             # Ensure it's a valid number
             SIGNAL_COUNT=${SIGNAL_COUNT:-0}
-            echo "signals_found=${SIGNAL_COUNT}" >> $GITHUB_OUTPUT
+            
+            # FIX: Use delimiter format to set output for signals_found
+            echo "signals_found<<$DELIMITER" >> $GITHUB_OUTPUT
+            echo "${SIGNAL_COUNT}" >> $GITHUB_OUTPUT
+            echo "$DELIMITER" >> $GITHUB_OUTPUT
             
             if [ "${SIGNAL_COUNT}" -gt 0 ] 2>/dev/null; then
               echo "✅ ${SIGNAL_COUNT} signal(s) detected in this run!"
@@ -279,15 +308,26 @@ jobs:
             
             ERROR_COUNT=$(grep -ci "error" production_trading_bot.log 2>/dev/null || echo "0")
             ERROR_COUNT=${ERROR_COUNT:-0}
-            echo "errors_found=${ERROR_COUNT}" >> $GITHUB_OUTPUT
+            
+            # FIX: Use delimiter format to set output for errors_found
+            echo "errors_found<<$DELIMITER" >> $GITHUB_OUTPUT
+            echo "${ERROR_COUNT}" >> $GITHUB_OUTPUT
+            echo "$DELIMITER" >> $GITHUB_OUTPUT
             
             if [ "${ERROR_COUNT}" -gt 0 ] 2>/dev/null; then
               echo "⚠️ ${ERROR_COUNT} error(s) detected in log"
             fi
           else
             echo "❌ Log file not found!"
-            echo "signals_found=0" >> $GITHUB_OUTPUT
-            echo "errors_found=0" >> $GITHUB_OUTPUT
+            
+            # FIX: Use delimiter format to set output when log file is missing
+            echo "signals_found<<$DELIMITER" >> $GITHUB_OUTPUT
+            echo "0" >> $GITHUB_OUTPUT
+            echo "$DELIMITER" >> $GITHUB_OUTPUT
+            
+            echo "errors_found<<$DELIMITER" >> $GITHUB_OUTPUT
+            echo "0" >> $GITHUB_OUTPUT
+            echo "$DELIMITER" >> $GITHUB_OUTPUT
           fi
       
       - name: Upload logs and data
@@ -393,7 +433,7 @@ jobs:
         run: |
           echo ""
           echo "╔══════════════════════════════════════════════════════════════════╗"
-          echo "║                    📊 EXECUTION SUMMARY                          ║"
+          echo "║                    📊 EXECUTION SUMMARY                         ║"
           echo "╚══════════════════════════════════════════════════════════════════╝"
           echo ""
           echo "Run #${{ github.run_number }} - Attempt #${{ github.run_attempt }}"
