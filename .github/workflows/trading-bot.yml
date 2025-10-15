@@ -188,7 +188,7 @@ jobs:
           fi
           
           # Validate supporting modules
-          for module in scripts/trade-journal.py scripts/position-manager.py; do
+          for module in scripts/trade_journal.py scripts/position_manager.py; do
             if [ -f "$module" ]; then
               python -m py_compile "$module"
               echo "✅ $module validated"
