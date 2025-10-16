@@ -16,7 +16,7 @@ on:
       force_run:
         description: 'Force run even during low liquidity'
         required: false
-        default: 'false'
+        default: 'true'
         type: boolean
 
 concurrency:
@@ -374,7 +374,7 @@ jobs:
           fi
           
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.SIMPLE_CHAT_ID }}" \
+            -d "chat_id=${{ secrets.MAIN_CHAT_ID }}" \
             -d "text=${MESSAGE}" \
             -d "parse_mode=HTML" \
             -d "disable_web_page_preview=true" || echo "⚠️ Failed to send success notification"
@@ -423,7 +423,7 @@ jobs:
           MESSAGE="${MESSAGE}<i>Next run: Top of next hour</i>"
           
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.SIMPLE_CHAT_ID }}" \
+            -d "chat_id=${{ secrets.MAIN_CHAT_ID }}" \
             -d "text=${MESSAGE}" \
             -d "parse_mode=HTML" \
             -d "disable_web_page_preview=true" || echo "⚠️ Failed to send skip notification"
