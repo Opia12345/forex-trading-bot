@@ -38,7 +38,7 @@ jobs:
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         MAIN_CHAT_ID: ${{ secrets.MAIN_CHAT_ID }}
-        STAKE_USD: ${{ secrets.STAKE_USD }}
+        STAKE_USD: ${{ secrets.STAKE_USD || '10' }}
       run: |
         python synthetic_bot.py
     

@@ -678,10 +678,14 @@ def main():
         return 1
     
     try:
+        # Handle STAKE_USD with proper default
+        stake_usd_str = os.getenv('STAKE_USD', '10')
+        stake_usd = float(stake_usd_str) if stake_usd_str else 10.0
+        
         bot = SyntheticTradingBot(
             telegram_token=telegram_token,
             main_chat_id=main_chat_id,
-            stake_usd=float(os.getenv('STAKE_USD', 10.0))
+            stake_usd=stake_usd
         )
         
         signals = bot.run_analysis_cycle()
