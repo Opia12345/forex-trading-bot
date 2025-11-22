@@ -681,7 +681,7 @@ def main():
         bot = SyntheticTradingBot(
             telegram_token=telegram_token,
             main_chat_id=main_chat_id,
-            stake_usd=float(os.getenv('STAKE_USD', '10'))
+            stake_usd=float(os.getenv('STAKE_USD', 10.0))
         )
         
         signals = bot.run_analysis_cycle()
