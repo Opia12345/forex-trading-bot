@@ -89,7 +89,7 @@ class TelegramNotifier:
             action_emoji = "🟢" if signal.action == "BUY" else "🔴"
             
             message = f"""
-{quality_emoji} <b>INSTITUTIONAL SIGNAL - {signal.quality.value}</b> {quality_emoji}
+{quality_emoji} <b>SYNTHETIC SIGNAL - {signal.quality.value}</b> {quality_emoji}
 
 {action_emoji} <b>{signal.action} {signal.symbol}</b>
 💯 Confidence: {signal.confidence:.1f}%
@@ -116,7 +116,7 @@ class TelegramNotifier:
                 message += f"• {reason}\n"
             
             message += f"""
-<b>⚠️ INSTITUTIONAL TRADE MANAGEMENT</b>
+<b>⚠️ TRADE MANAGEMENT</b>
 • **TP1 (Exit 50%):** Secure profit and move SL to **Breakeven** (+1 point).
 • **TP2 (Exit 30%):** Secure more profit and set a **Trailing Stop** below price action.
 • **TP3 (Exit 20%):** Let the final portion run, respecting the trailing stop.
