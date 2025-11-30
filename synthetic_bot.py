@@ -1,28 +1,25 @@
 """
-DERIV SYNTHETIC INDICES BOT - PRODUCTION GRADE v3.0
-Professional implementation for algorithm-generated markets
+DERIV SYNTHETIC INDICES BOT - HIGH FREQUENCY SCALPING v4.0
+Optimized for DAILY trades on Volatility Indices (V10, V25, V50, V75, V100)
 
-Major Improvements v3.0:
-1. Time-based stops (not price stops) for mean reversion
-2. Cointegration analysis between volatility indices
-3. Structural break detection (adaptive mean)
-4. Spread/transaction cost modeling
-5. Risk of ruin protection with circuit breakers
-6. Kelly Criterion position sizing
-7. Realistic 55-60% win rate targets
-8. Single exit at mean (no premature profit taking)
+v4.0 Focus: MORE FREQUENT TRADES
+1. M1 and M5 timeframes (faster signals)
+2. Multiple strategies running simultaneously
+3. Lower confidence thresholds (50%+)
+4. Quick scalps (5-20 minute holds)
+5. Micro mean reversions + volatility spikes
+6. All volatility indices (V10, V25, V50, V75, V100)
 
-Strategy Philosophy:
-- Mean Reversion: Hold until mean or time limit (no price stops)
-- Statistical Arbitrage: Trade cointegrated pairs
-- Adaptive Systems: Detect when relationships break
+Expected: 10-20 signals per day across all symbols
+Win Rate Target: 55-65%
+Hold Time: 5-30 minutes average
 """
 
 import os
 import sys
 import logging
 from typing import Optional, List, Tuple, Dict
-from datetime import datetime, time, timedelta
+from datetime import datetime, time
 from collections import deque
 from enum import Enum
 from dataclasses import dataclass, field
@@ -33,29 +30,24 @@ import json
 import asyncio
 import websockets
 from scipy import stats
-from statsmodels.tsa.stattools import coint
 
 # --- Logging Setup ---
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('synthetic_bot_production.log'),
+        logging.FileHandler('synthetic_bot_scalping.log'),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
 # --- Data Classes ---
-class MarketRegime(Enum):
-    RANGING = "RANGING"
-    TRENDING = "TRENDING"
-    VOLATILE = "VOLATILE"
-    STRUCTURAL_BREAK = "STRUCTURAL_BREAK"
-
 class StrategyType(Enum):
-    MEAN_REVERSION = "MEAN_REVERSION"
-    STATISTICAL_ARBITRAGE = "STATISTICAL_ARBITRAGE"
+    MICRO_REVERSAL = "MICRO_REVERSAL"
+    VOLATILITY_SPIKE = "VOLATILITY_SPIKE"
+    MOMENTUM_SCALP = "MOMENTUM_SCALP"
+    BOLLINGER_BOUNCE = "BOLLINGER_BOUNCE"
 
 @dataclass
 class TradeSignal:
@@ -65,71 +57,43 @@ class TradeSignal:
     strategy_type: StrategyType
     confidence: float
     entry_price: float
-    time_stop_candles: int  # Exit after N candles if no reversion
-    take_profit: float  # Single TP at mean
+    stop_loss: float
+    take_profit: float
     position_size_pct: float
-    market_regime: MarketRegime
-    statistical_edge: str
+    expected_hold_minutes: int
     z_score: float
-    volatility_percentile: float
-    mean_reversion_score: float
-    cointegration_score: float
-    spread_cost_adjusted: bool
+    volatility_state: str
     timestamp: datetime
     reasoning: List[str] = field(default_factory=list)
-    timeframe_data: Dict = field(default_factory=dict)
-    risk_metrics: Dict = field(default_factory=dict)
 
 # ============================================================================
-# RISK MANAGEMENT & CIRCUIT BREAKERS
+# RISK MANAGEMENT
 # ============================================================================
 class RiskManager:
     def __init__(self):
-        self.max_daily_loss_pct = 5.0  # Stop trading if down 5% in a day
-        self.max_concurrent_trades = 3
-        self.max_drawdown_pct = 15.0  # Circuit breaker at 15% drawdown
-        self.daily_pnl = 0.0
-        self.peak_balance = 100.0  # Starting balance reference
-        self.current_balance = 100.0
-        self.active_trades = 0
+        self.max_daily_loss_pct = 5.0
+        self.max_concurrent_trades = 5  # Increased for scalping
+        self.max_risk_per_trade = 1.0  # 1% per trade
+        self.daily_trades = 0
+        self.max_daily_trades = 30  # Cap at 30 trades per day
         
-    def check_circuit_breaker(self) -> Tuple[bool, str]:
-        """Check if we should stop trading"""
-        # Daily loss limit
-        daily_loss_pct = (self.daily_pnl / self.peak_balance) * 100
-        if daily_loss_pct < -self.max_daily_loss_pct:
-            return False, f"Daily loss limit reached ({daily_loss_pct:.1f}%)"
-        
-        # Drawdown limit
-        drawdown_pct = ((self.current_balance - self.peak_balance) / self.peak_balance) * 100
-        if drawdown_pct < -self.max_drawdown_pct:
-            return False, f"Max drawdown reached ({drawdown_pct:.1f}%)"
-        
-        # Concurrent trades limit
-        if self.active_trades >= self.max_concurrent_trades:
-            return False, f"Max concurrent trades ({self.max_concurrent_trades})"
-        
+    def can_trade(self) -> Tuple[bool, str]:
+        """Check if we can take another trade"""
+        if self.daily_trades >= self.max_daily_trades:
+            return False, f"Daily trade limit reached ({self.max_daily_trades})"
         return True, "OK"
     
-    def kelly_criterion_size(self, win_rate: float, avg_win: float, avg_loss: float) -> float:
-        """
-        Kelly Criterion for optimal position sizing
-        F = (p * b - q) / b
-        where p = win probability, q = loss probability, b = win/loss ratio
-        """
-        if avg_loss == 0 or win_rate <= 0 or win_rate >= 1:
-            return 0.5  # Default conservative
+    def calculate_position_size(self, confidence: float, symbol: str) -> float:
+        """Dynamic position sizing"""
+        base_size = self.max_risk_per_trade
         
-        p = win_rate
-        q = 1 - win_rate
-        b = avg_win / avg_loss
-        
-        kelly = (p * b - q) / b
-        
-        # Use fractional Kelly (25% of full Kelly for safety)
-        fractional_kelly = kelly * 0.25
-        
-        return max(0.2, min(fractional_kelly, 1.5))  # Clamp between 0.2% and 1.5%
+        # Adjust for confidence
+        if confidence >= 65:
+            return base_size * 1.2  # 1.2%
+        elif confidence >= 55:
+            return base_size  # 1.0%
+        else:
+            return base_size * 0.7  # 0.7%
 
 # ============================================================================
 # TELEGRAM NOTIFIER
@@ -142,102 +106,84 @@ class TelegramNotifier:
     
     def send_signal(self, signal: TradeSignal) -> bool:
         try:
-            a_emoji = "🟢 LONG" if signal.action == "BUY" else "🔴 SHORT"
-            regime_emoji = "📦" if signal.market_regime == MarketRegime.RANGING else "📈"
+            a_emoji = "🟢" if signal.action == "BUY" else "🔴"
+            strategy_emoji = {
+                StrategyType.MICRO_REVERSAL: "🔄",
+                StrategyType.VOLATILITY_SPIKE: "⚡",
+                StrategyType.MOMENTUM_SCALP: "🚀",
+                StrategyType.BOLLINGER_BOUNCE: "📊"
+            }.get(signal.strategy_type, "💹")
             
             message = f"""
-{regime_emoji} <b>SYNTHETIC SIGNAL v3.0</b>
+{strategy_emoji} <b>SCALP SIGNAL - {signal.strategy_type.value.replace('_', ' ')}</b>
 
-{a_emoji} <b>{signal.symbol}</b>
-⚡ <b>Strategy:</b> {signal.strategy_type.value.replace('_', ' ')}
-🎯 <b>Win Probability:</b> {signal.confidence:.1f}%
+{a_emoji} <b>{signal.symbol}</b> {a_emoji}
+🎯 Confidence: <b>{signal.confidence:.0f}%</b>
+⏱️ Expected Hold: <b>{signal.expected_hold_minutes} min</b>
 
-<b>💰 TRADE SETUP (TIME-BASED EXIT)</b>
+<b>💰 LEVELS</b>
 📍 Entry: <code>{signal.entry_price:.5f}</code>
-⏱️ Time Stop: Exit after {signal.time_stop_candles} candles if no reversion
-🎯 TP (Single Exit): <code>{signal.take_profit:.5f}</code>
-💼 Position Size: {signal.position_size_pct:.2f}% (Kelly-adjusted)
+🛑 Stop: <code>{signal.stop_loss:.5f}</code>
+🎯 Target: <code>{signal.take_profit:.5f}</code>
+💼 Risk: <b>{signal.position_size_pct:.1f}%</b>
 
-<b>📈 STATISTICAL METRICS</b>
-• Z-Score: <b>{signal.z_score:.2f}σ</b>
-• Volatility Percentile: <b>{signal.volatility_percentile:.0f}%</b>
-• Mean Reversion Score: <b>{signal.mean_reversion_score:.2f}</b>
-• Cointegration Score: <b>{signal.cointegration_score:.3f}</b>
-• Spread Cost: {'✅ Adjusted' if signal.spread_cost_adjusted else '❌ Not Adjusted'}
-• Edge: {signal.statistical_edge}
+<b>📊 STATS</b>
+• Z-Score: {signal.z_score:.2f}
+• Vol State: {signal.volatility_state}
 
-<b>⚠️ RISK METRICS</b>
-"""
-            for key, value in signal.risk_metrics.items():
-                message += f"• {key}: {value}\n"
-
-            message += f"""
-<b>✅ CONFIRMATIONS</b>
+<b>✅ SETUP</b>
 """
             for reason in signal.reasoning:
                 message += f"• {reason}\n"
-
-            message += f"""
-<b>⏰ TIMEFRAME ANALYSIS</b>
-"""
-            for tf, data in signal.timeframe_data.items():
-                message += f"• {tf}: {data}\n"
-
+            
             message += f"""
 <i>🆔 {signal.signal_id}</i>
-<i>⏱️ {signal.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}</i>
-
-<b>📚 Exit Rules:</b>
-1. Exit at TP (mean reversion complete)
-2. Exit after time stop (reversion failed)
-3. NO PRICE STOP LOSS (hold through noise)
+<i>⏱️ {signal.timestamp.strftime('%H:%M:%S')}</i>
 """
             return self._send_message(message)
         except Exception as e:
-            logger.error(f"Error sending signal: {e}")
+            logger.error(f"Telegram error: {e}")
             return False
     
     def _send_message(self, message: str) -> bool:
         try:
             url = f"{self.base_url}/sendMessage"
-            payload = {
-                "chat_id": self.chat_id,
-                "text": message,
-                "parse_mode": "HTML"
-            }
+            payload = {"chat_id": self.chat_id, "text": message, "parse_mode": "HTML"}
             response = requests.post(url, json=payload, timeout=10)
             return response.status_code == 200
-        except Exception as e:
-            logger.error(f"Telegram send error: {e}")
+        except:
             return False
 
 # ============================================================================
-# DERIV DATA FETCHER - MULTI-SYMBOL
+# DERIV DATA FETCHER - FAST TIMEFRAMES
 # ============================================================================
 class DerivDataFetcher:
     SYMBOLS = {
+        'V10': 'R_10',
+        'V25': 'R_25',
         'V50': 'R_50',
         'V75': 'R_75',
         'V100': 'R_100',
     }
     
     GRANULARITIES = {
+        'M1': 60,
         'M5': 300,
-        'M15': 900,
     }
     
-    # Deriv typical spreads (adjust based on your account)
     SPREADS = {
-        'V50': 0.00015,  # ~1.5 pips
-        'V75': 0.00020,  # ~2.0 pips
-        'V100': 0.00025, # ~2.5 pips
+        'V10': 0.00010,
+        'V25': 0.00015,
+        'V50': 0.00015,
+        'V75': 0.00020,
+        'V100': 0.00025,
     }
     
     def __init__(self, app_id: str = "1089"):
         self.app_id = app_id
         self.ws_url = f"wss://ws.derivws.com/websockets/v3?app_id={app_id}"
     
-    async def _fetch_candles_async(self, symbol: str, granularity: int, count: int = 500) -> Optional[List]:
+    async def _fetch_candles_async(self, symbol: str, granularity: int, count: int = 300) -> Optional[List]:
         try:
             async with websockets.connect(self.ws_url, ping_interval=30, close_timeout=10) as ws:
                 request = {
@@ -258,7 +204,7 @@ class DerivDataFetcher:
             return None
     
     def get_multi_timeframe_data(self, symbol: str) -> Dict[str, pd.DataFrame]:
-        """Fetch M5 and M15 data"""
+        """Fetch M1 and M5 data"""
         deriv_symbol = self.SYMBOLS.get(symbol)
         if not deriv_symbol:
             return {}
@@ -293,310 +239,293 @@ class DerivDataFetcher:
         
         return result
     
-    def get_spread_cost(self, symbol: str) -> float:
-        """Get typical spread cost for symbol"""
+    def get_spread(self, symbol: str) -> float:
         return self.SPREADS.get(symbol, 0.0002)
 
 # ============================================================================
-# ADVANCED STATISTICAL ANALYSIS
+# SCALPING INDICATORS
 # ============================================================================
-class AdvancedStatistics:
+class ScalpingIndicators:
     
     @staticmethod
-    def calculate_returns(series: pd.Series) -> pd.Series:
-        """Log returns"""
-        return np.log(series / series.shift(1))
-    
-    @staticmethod
-    def calculate_adaptive_z_score(series: pd.Series, window: int = 100) -> Tuple[pd.Series, pd.Series]:
-        """
-        Adaptive Z-score with exponential weighting
-        Returns: (z_score, adaptive_mean)
-        """
-        # Exponentially weighted mean (more weight to recent data)
-        ewm_mean = series.ewm(span=window).mean()
-        ewm_std = series.ewm(span=window).std()
+    def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
+        """Add fast scalping indicators"""
+        # Price action
+        df['returns'] = df['close'].pct_change()
         
-        z_score = (series - ewm_mean) / ewm_std
+        # Fast EMAs
+        df['ema_5'] = df['close'].ewm(span=5, adjust=False).mean()
+        df['ema_10'] = df['close'].ewm(span=10, adjust=False).mean()
+        df['ema_20'] = df['close'].ewm(span=20, adjust=False).mean()
         
-        return z_score, ewm_mean
-    
-    @staticmethod
-    def detect_structural_break(series: pd.Series, window: int = 100) -> Tuple[bool, float]:
-        """
-        Detect if the mean has shifted permanently (CUSUM test)
-        Returns: (has_break, break_score)
-        """
-        if len(series) < window + 50:
-            return False, 0.0
+        # Bollinger Bands (20-period, 2 std)
+        df['bb_middle'] = df['close'].rolling(window=20).mean()
+        bb_std = df['close'].rolling(window=20).std()
+        df['bb_upper'] = df['bb_middle'] + (bb_std * 2)
+        df['bb_lower'] = df['bb_middle'] - (bb_std * 2)
+        df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
         
-        recent = series.tail(50).mean()
-        historical = series.tail(window).iloc[:-50].mean()
-        historical_std = series.tail(window).iloc[:-50].std()
+        # Z-score (50-period for quick reversions)
+        mean_50 = df['close'].rolling(window=50).mean()
+        std_50 = df['close'].rolling(window=50).std()
+        df['z_score'] = (df['close'] - mean_50) / std_50
         
-        if historical_std == 0:
-            return False, 0.0
+        # ATR (14-period)
+        high_low = df['high'] - df['low']
+        high_close = np.abs(df['high'] - df['close'].shift())
+        low_close = np.abs(df['low'] - df['close'].shift())
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        true_range = np.max(ranges, axis=1)
+        df['atr'] = pd.Series(true_range).rolling(window=14).mean()
         
-        # Normalized difference
-        break_score = abs(recent - historical) / historical_std
+        # Volatility
+        df['volatility'] = df['returns'].rolling(window=20).std()
+        df['vol_ma'] = df['volatility'].rolling(window=50).mean()
+        df['vol_spike'] = df['volatility'] > (df['vol_ma'] * 1.5)
         
-        # Break detected if mean shifted by more than 2 std devs
-        has_break = break_score > 2.0
+        # RSI (14-period)
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df['rsi'] = 100 - (100 / (1 + rs))
         
-        return has_break, break_score
-    
-    @staticmethod
-    def test_cointegration(series1: pd.Series, series2: pd.Series) -> Tuple[bool, float]:
-        """
-        Test if two series are cointegrated (move together)
-        Returns: (is_cointegrated, p_value)
-        """
-        try:
-            # Align series
-            df = pd.DataFrame({'s1': series1, 's2': series2}).dropna()
-            
-            if len(df) < 100:
-                return False, 1.0
-            
-            # Engle-Granger cointegration test
-            score, p_value, _ = coint(df['s1'], df['s2'])
-            
-            # Cointegrated if p_value < 0.05
-            is_cointegrated = p_value < 0.05
-            
-            return is_cointegrated, p_value
-        except:
-            return False, 1.0
-    
-    @staticmethod
-    def calculate_bollinger_deviation(series: pd.Series, window: int = 20, std_mult: float = 2.0) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Bollinger bands"""
-        mean = series.rolling(window=window).mean()
-        std = series.rolling(window=window).std()
-        upper = mean + (std * std_mult)
-        lower = mean - (std * std_mult)
-        return upper, mean, lower
-    
-    @staticmethod
-    def calculate_realized_volatility(returns: pd.Series, window: int = 20) -> pd.Series:
-        """Realized volatility (annualized)"""
-        return returns.rolling(window=window).std() * np.sqrt(252 * 390)
-    
-    @staticmethod
-    def volatility_percentile(current_vol: float, historical_vol: pd.Series) -> float:
-        """Volatility percentile"""
-        percentile = stats.percentileofscore(historical_vol.dropna(), current_vol)
-        return percentile
-    
-    @staticmethod
-    def mean_reversion_strength(series: pd.Series, window: int = 50) -> float:
-        """
-        Mean reversion score via autocorrelation
-        > 0.6 = strong mean reversion
-        0.4-0.6 = moderate
-        < 0.4 = weak/trending
-        """
-        try:
-            returns = series.pct_change().dropna()
-            if len(returns) < 10:
-                return 0.5
-            
-            autocorr = returns.tail(window).autocorr(lag=1)
-            
-            # Convert: -1 -> 1.0 (perfect MR), 0 -> 0.5 (random), 1 -> 0 (trending)
-            mr_score = 0.5 - (autocorr * 0.5)
-            return max(0.0, min(1.0, mr_score))
-        except:
-            return 0.5
-    
-    @staticmethod
-    def detect_market_regime(df: pd.DataFrame, window: int = 50) -> Tuple[MarketRegime, float]:
-        """Enhanced regime detection with structural break check"""
-        if len(df) < window + 50:
-            return MarketRegime.RANGING, 0.5
-        
-        # Check for structural break first
-        has_break, break_score = AdvancedStatistics.detect_structural_break(df['close'], window)
-        
-        if has_break:
-            return MarketRegime.STRUCTURAL_BREAK, 0.0
-        
-        # Calculate directional bias
-        returns = df['close'].pct_change()
-        positive_moves = (returns > 0).rolling(window=window).sum()
-        directional_bias = abs(positive_moves - (window / 2)) / (window / 2)
-        
-        # Calculate volatility expansion
-        recent_vol = df['realized_vol'].iloc[-20:].mean()
-        historical_vol = df['realized_vol'].iloc[-100:-20].mean()
-        vol_ratio = recent_vol / historical_vol if historical_vol > 0 else 1.0
-        
-        # Mean reversion score
-        mr_score = AdvancedStatistics.mean_reversion_strength(df['close'], window)
-        
-        # Decision logic
-        if vol_ratio > 1.5:
-            return MarketRegime.VOLATILE, mr_score
-        elif directional_bias > 0.4:
-            return MarketRegime.TRENDING, mr_score
-        else:
-            return MarketRegime.RANGING, mr_score
-    
-    @staticmethod
-    def add_statistical_features(df: pd.DataFrame) -> pd.DataFrame:
-        """Add all statistical features"""
-        # Returns
-        df['returns'] = AdvancedStatistics.calculate_returns(df['close'])
-        
-        # Adaptive Z-score
-        df['z_score'], df['adaptive_mean'] = AdvancedStatistics.calculate_adaptive_z_score(df['close'], 100)
-        
-        # Bollinger bands (2 std dev)
-        df['bb_upper'], df['bb_mean'], df['bb_lower'] = \
-            AdvancedStatistics.calculate_bollinger_deviation(df['close'], 20, 2.0)
-        
-        # Realized volatility
-        df['realized_vol'] = AdvancedStatistics.calculate_realized_volatility(df['returns'], 20)
-        
-        # Price distance from mean
-        df['distance_from_mean'] = ((df['close'] - df['adaptive_mean']) / df['adaptive_mean']) * 100
-        
-        # Volatility metrics
-        df['vol_ma'] = df['realized_vol'].rolling(window=50).mean()
-        df['vol_ratio'] = df['realized_vol'] / df['vol_ma']
-        
-        # Band metrics
-        df['bb_width'] = ((df['bb_upper'] - df['bb_lower']) / df['bb_mean']) * 100
-        df['bb_width_ma'] = df['bb_width'].rolling(window=50).mean()
-        df['bb_squeeze'] = df['bb_width'] / df['bb_width_ma']
+        # Price position in BB
+        df['bb_position'] = (df['close'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
         
         df.dropna(inplace=True)
         return df
 
 # ============================================================================
-# PRODUCTION STRATEGY
+# SCALPING STRATEGIES
 # ============================================================================
-class ProductionStrategy:
+class ScalpingStrategies:
     
     @staticmethod
-    def analyze_mean_reversion_v3(
-        df: pd.DataFrame,
-        regime: MarketRegime,
-        mr_score: float,
-        symbol: str,
-        spread_cost: float,
-        all_symbols_data: Dict[str, pd.DataFrame]
-    ) -> Tuple[Optional[str], float, List[str], float, float, float, Dict]:
+    def strategy_micro_reversal(df: pd.DataFrame) -> Tuple[Optional[str], float, List[str], float, str]:
         """
-        Production Mean Reversion v3.0
-        - Only ranging markets
-        - No price stops (time-based only)
-        - Cointegration check with other indices
-        - Spread cost adjustment
-        - Single TP at mean
+        Micro Mean Reversion (Quick 5-15min scalps)
+        - Price touches BB extremes
+        - RSI oversold/overbought
+        - Quick reversion to middle BB
         """
-        if len(df) < 150:
-            return None, 0.0, ["Insufficient data"], 0.0, 0.0, 0.0, {}
-        
-        # CRITICAL: Reject if not ranging or has structural break
-        if regime not in [MarketRegime.RANGING]:
-            return None, 0.0, [f"❌ Market is {regime.value} - MR only in RANGING"], 0.0, 0.0, 0.0, {}
+        if len(df) < 50:
+            return None, 0.0, [], 0.0, ""
         
         last = df.iloc[-1]
-        recent_df = df.tail(100)
+        prev = df.iloc[-2]
         
         reasoning = []
         score = 0.0
         action = None
-        risk_metrics = {}
         
-        # 1. Strong Mean Reversion Required (25 points)
-        if mr_score < 0.65:
-            return None, 0.0, [f"❌ MR score {mr_score:.2f} < 0.65"], 0.0, 0.0, 0.0, {}
-        
-        score += 25
-        reasoning.append(f"✅ Strong MR (score: {mr_score:.2f})")
-        
-        # 2. Extreme Z-Score with Adaptive Mean (30 points)
-        z_score = last['z_score']
-        
-        if z_score < -3.0:  # More extreme threshold
+        # 1. BB Touch (30 points)
+        if last['close'] <= last['bb_lower']:
             action = "BUY"
             score += 30
-            reasoning.append(f"✅ Extreme deviation: {abs(z_score):.2f}σ below adaptive mean")
-        elif z_score > 3.0:
+            reasoning.append("✅ Price at lower BB")
+        elif last['close'] >= last['bb_upper']:
             action = "SELL"
             score += 30
-            reasoning.append(f"✅ Extreme deviation: {abs(z_score):.2f}σ above adaptive mean")
+            reasoning.append("✅ Price at upper BB")
         else:
-            return None, 0.0, [f"❌ Z-score {z_score:.2f} not extreme (need >3.0σ)"], z_score, 0.0, 0.0, {}
+            return None, 0.0, ["❌ Price not at BB extremes"], 0.0, ""
         
-        # 3. Cointegration Check with Other Indices (15 points)
-        cointegration_score = 0.0
-        cointegrated_pairs = []
-        
-        for other_symbol, other_df in all_symbols_data.items():
-            if other_symbol == symbol or other_df.empty:
-                continue
-            
-            is_coint, p_value = AdvancedStatistics.test_cointegration(
-                df['close'], 
-                other_df['close']
-            )
-            
-            if is_coint:
-                cointegrated_pairs.append(f"{other_symbol} (p={p_value:.3f})")
-                cointegration_score = max(cointegration_score, 1 - p_value)
-        
-        if len(cointegrated_pairs) > 0:
-            score += 15
-            reasoning.append(f"✅ Cointegrated with: {', '.join(cointegrated_pairs)}")
+        # 2. RSI Confirmation (20 points)
+        if action == "BUY" and last['rsi'] < 35:
+            score += 20
+            reasoning.append(f"✅ RSI oversold ({last['rsi']:.0f})")
+        elif action == "SELL" and last['rsi'] > 65:
+            score += 20
+            reasoning.append(f"✅ RSI overbought ({last['rsi']:.0f})")
         else:
             score += 5
-            reasoning.append("⚠️ No cointegration found with other indices")
-            cointegration_score = 0.5  # Neutral
+            reasoning.append(f"⚠️ RSI neutral ({last['rsi']:.0f})")
         
-        # 4. Volatility Stability (15 points)
-        vol_ratio = last['vol_ratio']
-        vol_percentile = AdvancedStatistics.volatility_percentile(
-            last['realized_vol'],
-            recent_df['realized_vol']
-        )
-        
-        if vol_ratio < 1.2:
+        # 3. Z-Score (15 points)
+        z_score = last['z_score']
+        if (action == "BUY" and z_score < -1.5) or (action == "SELL" and z_score > 1.5):
             score += 15
-            reasoning.append(f"✅ Volatility stable (ratio: {vol_ratio:.2f})")
+            reasoning.append(f"✅ Z-score extreme ({z_score:.2f})")
+        
+        # 4. Not in volatility spike (10 points)
+        if not last['vol_spike']:
+            score += 10
+            reasoning.append("✅ Stable volatility")
+        
+        vol_state = "SPIKE" if last['vol_spike'] else "STABLE"
+        
+        return action, score, reasoning, z_score, vol_state
+    
+    @staticmethod
+    def strategy_volatility_spike(df: pd.DataFrame) -> Tuple[Optional[str], float, List[str], float, str]:
+        """
+        Volatility Spike Fade (Ride the spike then fade)
+        - Detect volatility spike
+        - Enter on pullback
+        - Exit on reversion
+        """
+        if len(df) < 50:
+            return None, 0.0, [], 0.0, ""
+        
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+        
+        reasoning = []
+        score = 0.0
+        action = None
+        
+        # 1. Volatility spike detected (25 points)
+        if not last['vol_spike']:
+            return None, 0.0, ["❌ No volatility spike"], 0.0, ""
+        
+        score += 25
+        reasoning.append("✅ Volatility spike detected")
+        
+        # 2. Price moved significantly (20 points)
+        price_move = abs(last['returns']) * 100
+        if price_move > 0.3:
+            score += 20
+            reasoning.append(f"✅ Strong move ({price_move:.2f}%)")
+        
+        # 3. Reversal candle (20 points)
+        if last['close'] < last['open'] and prev['close'] > prev['open']:
+            action = "SELL"
+            score += 20
+            reasoning.append("✅ Bearish reversal candle")
+        elif last['close'] > last['open'] and prev['close'] < prev['open']:
+            action = "BUY"
+            score += 20
+            reasoning.append("✅ Bullish reversal candle")
         else:
-            score += 5
-            reasoning.append(f"⚠️ Elevated volatility (ratio: {vol_ratio:.2f})")
+            return None, 0.0, ["❌ No reversal pattern"], 0.0, "SPIKE"
         
-        # 5. Spread Cost Adjustment (-5 to -15 points)
-        price = last['close']
-        spread_cost_pct = (spread_cost / price) * 100
-        spread_penalty = min(15, spread_cost_pct * 100)  # Higher spread = more penalty
+        # 4. EMA alignment (10 points)
+        if action == "BUY" and last['ema_5'] > last['ema_10']:
+            score += 10
+            reasoning.append("✅ EMA bullish")
+        elif action == "SELL" and last['ema_5'] < last['ema_10']:
+            score += 10
+            reasoning.append("✅ EMA bearish")
         
-        score -= spread_penalty
-        reasoning.append(f"⚠️ Spread cost: {spread_cost_pct:.3f}% (-{spread_penalty:.0f} pts)")
+        z_score = last['z_score']
         
-        # Risk Metrics
-        risk_metrics['Expected Win Rate'] = '55-60%'
-        risk_metrics['Avg R:R'] = '1:1 to 1:1.2'
-        risk_metrics['Max Consecutive Losses'] = '5-7 (expected)'
-        risk_metrics['Spread Adjusted'] = 'Yes'
+        return action, score, reasoning, z_score, "SPIKE"
+    
+    @staticmethod
+    def strategy_momentum_scalp(df: pd.DataFrame) -> Tuple[Optional[str], float, List[str], float, str]:
+        """
+        Momentum Scalp (Ride short bursts)
+        - EMA crossover
+        - RSI trending
+        - Quick in/out
+        """
+        if len(df) < 50:
+            return None, 0.0, [], 0.0, ""
         
-        return action, score, reasoning, z_score, vol_percentile, cointegration_score, risk_metrics
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+        
+        reasoning = []
+        score = 0.0
+        action = None
+        
+        # 1. EMA crossover (30 points)
+        if prev['ema_5'] <= prev['ema_10'] and last['ema_5'] > last['ema_10']:
+            action = "BUY"
+            score += 30
+            reasoning.append("✅ EMA bullish crossover")
+        elif prev['ema_5'] >= prev['ema_10'] and last['ema_5'] < last['ema_10']:
+            action = "SELL"
+            score += 30
+            reasoning.append("✅ EMA bearish crossover")
+        else:
+            return None, 0.0, ["❌ No EMA crossover"], 0.0, ""
+        
+        # 2. RSI momentum (20 points)
+        if action == "BUY" and 45 < last['rsi'] < 65:
+            score += 20
+            reasoning.append(f"✅ RSI bullish ({last['rsi']:.0f})")
+        elif action == "SELL" and 35 < last['rsi'] < 55:
+            score += 20
+            reasoning.append(f"✅ RSI bearish ({last['rsi']:.0f})")
+        
+        # 3. Price above/below EMA20 (15 points)
+        if action == "BUY" and last['close'] > last['ema_20']:
+            score += 15
+            reasoning.append("✅ Price above EMA20")
+        elif action == "SELL" and last['close'] < last['ema_20']:
+            score += 15
+            reasoning.append("✅ Price below EMA20")
+        
+        z_score = last['z_score']
+        vol_state = "SPIKE" if last['vol_spike'] else "STABLE"
+        
+        return action, score, reasoning, z_score, vol_state
+    
+    @staticmethod
+    def strategy_bollinger_bounce(df: pd.DataFrame) -> Tuple[Optional[str], float, List[str], float, str]:
+        """
+        Bollinger Bounce (Trade the channel)
+        - Price bounces off BB
+        - Stay in channel
+        - Quick scalp to opposite side
+        """
+        if len(df) < 50:
+            return None, 0.0, [], 0.0, ""
+        
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+        
+        reasoning = []
+        score = 0.0
+        action = None
+        
+        # 1. Bounce off lower BB (25 points)
+        if prev['close'] < prev['bb_lower'] and last['close'] >= last['bb_lower']:
+            action = "BUY"
+            score += 25
+            reasoning.append("✅ Bounce off lower BB")
+        elif prev['close'] > prev['bb_upper'] and last['close'] <= last['bb_upper']:
+            action = "SELL"
+            score += 25
+            reasoning.append("✅ Bounce off upper BB")
+        else:
+            return None, 0.0, ["❌ No BB bounce"], 0.0, ""
+        
+        # 2. BB width not too wide (15 points)
+        if last['bb_width'] < 0.03:  # Tight channel
+            score += 15
+            reasoning.append(f"✅ Tight BB channel ({last['bb_width']:.4f})")
+        
+        # 3. RSI confirmation (15 points)
+        if action == "BUY" and last['rsi'] < 40:
+            score += 15
+            reasoning.append(f"✅ RSI low ({last['rsi']:.0f})")
+        elif action == "SELL" and last['rsi'] > 60:
+            score += 15
+            reasoning.append(f"✅ RSI high ({last['rsi']:.0f})")
+        
+        # 4. Candle confirmation (10 points)
+        if action == "BUY" and last['close'] > last['open']:
+            score += 10
+            reasoning.append("✅ Bullish candle")
+        elif action == "SELL" and last['close'] < last['open']:
+            score += 10
+            reasoning.append("✅ Bearish candle")
+        
+        z_score = last['z_score']
+        vol_state = "SPIKE" if last['vol_spike'] else "STABLE"
+        
+        return action, score, reasoning, z_score, vol_state
 
 # ============================================================================
 # BOT CONTROLLER
 # ============================================================================
 class SyntheticBot:
     
-    TARGET_SYMBOLS = ['V50', 'V75', 'V100']
-    
-    TRADING_HOURS = {
-        'start': time(6, 0),
-        'end': time(22, 0)
-    }
+    # All volatility indices (excluding 1s versions)
+    TARGET_SYMBOLS = ['V10', 'V25', 'V50', 'V75', 'V100']
     
     def __init__(self):
         self.telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -609,175 +538,134 @@ class SyntheticBot:
         self.notifier = TelegramNotifier(self.telegram_token, self.chat_id)
         self.fetcher = DerivDataFetcher()
         self.risk_manager = RiskManager()
-        self.processed_signals = deque(maxlen=30)
+        self.processed_signals = deque(maxlen=100)
     
-    def is_trading_hours(self) -> bool:
-        """Check trading hours"""
-        now = datetime.now().time()
-        return self.TRADING_HOURS['start'] <= now <= self.TRADING_HOURS['end']
-    
-    def calculate_kelly_position_size(self, confidence: float) -> float:
-        """Kelly Criterion sizing"""
-        # Assume realistic stats for mean reversion
-        win_rate = confidence / 100.0
-        avg_win = 1.0  # 1:1 R:R baseline
-        avg_loss = 1.0
-        
-        kelly_size = self.risk_manager.kelly_criterion_size(win_rate, avg_win, avg_loss)
-        
-        return kelly_size
-    
-    def calculate_time_stop(self, timeframe: str) -> int:
-        """
-        Calculate time-based stop (exit after N candles if no reversion)
-        Mean reversion should happen quickly or not at all
-        """
-        if timeframe == 'M5':
-            return 12  # 60 minutes (12 * 5min candles)
-        elif timeframe == 'M15':
-            return 8   # 120 minutes (8 * 15min candles)
-        else:
-            return 10
-    
-    def calculate_levels_v3(self, df: pd.DataFrame, action: str) -> dict:
-        """
-        v3.0 Levels:
-        - Entry: Current price
-        - TP: Adaptive mean (single exit point)
-        - No price stop (use time stop instead)
-        """
+    def calculate_levels(self, df: pd.DataFrame, action: str, strategy: StrategyType) -> dict:
+        """Calculate SL and TP based on strategy"""
         last = df.iloc[-1]
         price = last['close']
-        adaptive_mean = last['adaptive_mean']
+        atr = last['atr']
         
-        # Single TP at adaptive mean
-        tp = adaptive_mean
+        # Tight stops for scalping
+        if strategy == StrategyType.MICRO_REVERSAL:
+            sl_mult = 1.5
+            tp_mult = 1.0  # 1:0.66 R:R (higher win rate compensates)
+            hold_min = 10
+        elif strategy == StrategyType.VOLATILITY_SPIKE:
+            sl_mult = 2.0
+            tp_mult = 1.5
+            hold_min = 15
+        elif strategy == StrategyType.MOMENTUM_SCALP:
+            sl_mult = 1.5
+            tp_mult = 1.2
+            hold_min = 12
+        else:  # BOLLINGER_BOUNCE
+            sl_mult = 1.0
+            tp_mult = 1.5
+            hold_min = 8
         
-        # Calculate theoretical R:R (for info only, no price stop used)
-        distance_to_mean = abs(price - adaptive_mean)
-        theoretical_sl = price + (distance_to_mean * 1.5) if action == "SELL" else price - (distance_to_mean * 1.5)
+        sl_distance = atr * sl_mult
+        tp_distance = atr * tp_mult
         
-        sl_distance = abs(price - theoretical_sl)
-        tp_distance = abs(price - tp)
-        rr = tp_distance / sl_distance if sl_distance > 0 else 1.0
+        if action == "BUY":
+            sl = price - sl_distance
+            tp = price + tp_distance
+        else:
+            sl = price + sl_distance
+            tp = price - tp_distance
         
         return {
             'entry': price,
+            'sl': sl,
             'tp': tp,
-            'rr': rr
+            'hold_min': hold_min
         }
     
     def run(self):
-        logger.info("🚀 STARTING PRODUCTION BOT v3.0")
-        logger.info("Strategy: Mean Reversion (Time-Based Stops, No Price Stops)")
+        logger.info("🚀 STARTING HIGH FREQUENCY SCALPING BOT v4.0")
+        logger.info(f"Target: {len(self.TARGET_SYMBOLS)} symbols, 10-20 trades/day")
         
-        # Check circuit breakers
-        can_trade, reason = self.risk_manager.check_circuit_breaker()
+        # Check risk limits
+        can_trade, reason = self.risk_manager.can_trade()
         if not can_trade:
-            logger.warning(f"⛔ Circuit breaker triggered: {reason}")
+            logger.warning(f"⛔ {reason}")
             return
         
-        if not self.is_trading_hours():
-            logger.info("⏰ Outside trading hours")
-            return
+        signals_found = 0
         
-        # Fetch data for all symbols (for cointegration analysis)
-        all_symbols_data = {}
-        for symbol in self.TARGET_SYMBOLS:
-            mtf_data = self.fetcher.get_multi_timeframe_data(symbol)
-            if 'M15' in mtf_data:
-                df = AdvancedStatistics.add_statistical_features(mtf_data['M15'])
-                all_symbols_data[symbol] = df
-        
-        # Analyze each symbol
         for symbol in self.TARGET_SYMBOLS:
             try:
-                if symbol not in all_symbols_data:
+                # Fetch M1 and M5 data
+                mtf_data = self.fetcher.get_multi_timeframe_data(symbol)
+                
+                if 'M5' not in mtf_data:
                     logger.warning(f"No data for {symbol}")
                     continue
                 
-                df = all_symbols_data[symbol]
+                # Primary analysis on M5
+                df = ScalpingIndicators.add_indicators(mtf_data['M5'])
                 
-                if df.empty or len(df) < 150:
-                    logger.warning(f"Insufficient data for {symbol}")
+                if df.empty or len(df) < 50:
                     continue
                 
-                # Detect regime
-                regime, mr_score = AdvancedStatistics.detect_market_regime(df, 50)
-                logger.info(f"{symbol}: Regime={regime.value}, MR={mr_score:.2f}")
+                # Run all 4 strategies
+                strategies = [
+                    (ScalpingStrategies.strategy_micro_reversal, StrategyType.MICRO_REVERSAL),
+                    (ScalpingStrategies.strategy_volatility_spike, StrategyType.VOLATILITY_SPIKE),
+                    (ScalpingStrategies.strategy_momentum_scalp, StrategyType.MOMENTUM_SCALP),
+                    (ScalpingStrategies.strategy_bollinger_bounce, StrategyType.BOLLINGER_BOUNCE),
+                ]
                 
-                # Get spread cost
-                spread_cost = self.fetcher.get_spread_cost(symbol)
-                
-                # Analyze mean reversion
-                action, confidence, reasoning, z_score, vol_pct, coint_score, risk_metrics = \
-                    ProductionStrategy.analyze_mean_reversion_v3(
-                        df, regime, mr_score, symbol, spread_cost, all_symbols_data
+                for strategy_func, strategy_type in strategies:
+                    action, confidence, reasoning, z_score, vol_state = strategy_func(df)
+                    
+                    if not action:
+                        continue
+                    
+                    # Lower threshold: 50%+ (more signals)
+                    if confidence < 50:
+                        continue
+                    
+                    # Check duplicates (10-minute window)
+                    sig_key = f"{symbol}_{strategy_type.value}_{int(datetime.now().timestamp() / 600)}"
+                    if sig_key in self.processed_signals:
+                        continue
+                    
+                    # Calculate levels
+                    levels = self.calculate_levels(df, action, strategy_type)
+                    
+                    # Position sizing
+                    pos_size = self.risk_manager.calculate_position_size(confidence, symbol)
+                    
+                    # Create signal
+                    signal = TradeSignal(
+                        signal_id=f"SCALP-{symbol}-{strategy_type.value[:3]}-{int(datetime.now().timestamp())}",
+                        symbol=symbol,
+                        action=action,
+                        strategy_type=strategy_type,
+                        confidence=confidence,
+                        entry_price=levels['entry'],
+                        stop_loss=levels['sl'],
+                        take_profit=levels['tp'],
+                        position_size_pct=pos_size,
+                        expected_hold_minutes=levels['hold_min'],
+                        z_score=z_score,
+                        volatility_state=vol_state,
+                        timestamp=datetime.now(),
+                        reasoning=reasoning
                     )
-                
-                if not action:
-                    logger.info(f"{symbol}: No setup. {reasoning[0] if reasoning else 'N/A'}")
-                    continue
-                
-                # Minimum confidence: 55% (realistic)
-                if confidence < 55:
-                    logger.info(f"{symbol}: Confidence {confidence:.1f}% below 55% threshold")
-                    continue
-                
-                # Check for duplicates
-                sig_key = f"{symbol}_{action}_{int(datetime.now().timestamp() / 7200)}"  # 2-hour window
-                if sig_key in self.processed_signals:
-                    logger.info(f"{symbol}: Duplicate signal in 2-hour window")
-                    continue
-                
-                # Calculate levels
-                levels = self.calculate_levels_v3(df, action)
-                
-                # Kelly position sizing
-                pos_size = self.calculate_kelly_position_size(confidence)
-                
-                # Time stop
-                time_stop = self.calculate_time_stop('M15')
-                
-                # Statistical edge
-                edge = f"MR: {abs(z_score):.1f}σ deviation, {len([s for s in all_symbols_data if s != symbol])} cointegrated pairs"
-                
-                # Timeframe data
-                tf_data = {'M15': f"Z={z_score:.2f}, Vol={df.iloc[-1]['vol_ratio']:.2f}, Regime={regime.value}"}
-                
-                # Create signal
-                signal = TradeSignal(
-                    signal_id=f"PROD-{symbol}-{int(datetime.now().timestamp())}",
-                    symbol=symbol,
-                    action=action,
-                    strategy_type=StrategyType.MEAN_REVERSION,
-                    confidence=confidence,
-                    entry_price=levels['entry'],
-                    time_stop_candles=time_stop,
-                    take_profit=levels['tp'],
-                    position_size_pct=pos_size,
-                    market_regime=regime,
-                    statistical_edge=edge,
-                    z_score=z_score,
-                    volatility_percentile=vol_pct,
-                    mean_reversion_score=mr_score,
-                    cointegration_score=coint_score,
-                    spread_cost_adjusted=True,
-                    timestamp=datetime.now(),
-                    reasoning=reasoning,
-                    timeframe_data=tf_data,
-                    risk_metrics=risk_metrics
-                )
-                
-                # Send signal
-                logger.info(f"✅ SIGNAL: {symbol} {action} @ {confidence:.1f}% (MR v3.0)")
-                if self.notifier.send_signal(signal):
-                    self.processed_signals.append(sig_key)
-                    self.risk_manager.active_trades += 1
-                    logger.info(f"📤 Signal sent to Telegram")
+                    
+                    # Send signal
+                    logger.info(f"✅ {symbol} {action} {strategy_type.value} @ {confidence:.0f}%")
+                    if self.notifier.send_signal(signal):
+                        self.processed_signals.append(sig_key)
+                        self.risk_manager.daily_trades += 1
+                        signals_found += 1
                 
             except Exception as e:
-                logger.error(f"Error processing {symbol}: {e}", exc_info=True)
+                logger.error(f"Error on {symbol}: {e}", exc_info=True)
+        
+        logger.info(f"📊 Scan complete: {signals_found} signals sent")
 
 # ============================================================================
 # MAIN
