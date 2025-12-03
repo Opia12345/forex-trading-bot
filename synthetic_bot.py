@@ -1,33 +1,21 @@
 """
-DERIV SYNTHETIC INDICES - SMALL ACCOUNT BUILDER v5.0
-Optimized specifically for $50-$500 accounts
+DERIV SYNTHETIC INDICES - SMALL ACCOUNT BUILDER v5.1
+FIXED VERSION - Realistic signal generation
 
-Strategy Philosophy:
-- QUALITY over QUANTITY (3-5 perfect setups daily)
-- M15/H1 timeframes (spreads are negligible)
-- Mean reversion ONLY (highest win rate strategy)
-- 1:2 minimum R:R (each win covers 2 losses)
-- Trade 2-3 hours daily (London/NY sessions)
-- 60-70% realistic win rate
-- Conservative 0.5-1% risk per trade
-
-Expected Performance:
-- 3-5 trades per day
-- 60-70% win rate
-- 5-10% monthly growth (sustainable)
-- 2-hour daily commitment
-- Low stress, high probability
-
-Focus Symbols: V75, V100 only (most liquid, tightest spreads)
+Key Changes:
+- Reduced Z-score threshold to 1.8σ (more realistic)
+- Simplified quality filters (removed excessive stacking)
+- Added timezone awareness
+- More forgiving confidence scoring
+- Better session detection
 """
 
 import os
 import sys
 import logging
 from typing import Optional, List, Tuple, Dict
-from datetime import datetime, time
+from datetime import datetime, time, timezone
 from collections import deque
-from enum import Enum
 from dataclasses import dataclass, field
 import pandas as pd
 import numpy as np
@@ -35,7 +23,7 @@ import requests
 import json
 import asyncio
 import websockets
-from scipy import stats
+import pytz
 
 # --- Logging Setup ---
 logging.basicConfig(
@@ -50,21 +38,20 @@ logger = logging.getLogger(__name__)
 
 # --- Configuration ---
 class TradingConfig:
-    # Only trade during high liquidity periods (tightest spreads)
-    LONDON_SESSION = (time(8, 0), time(12, 0))  # 8am-12pm GMT
-    NY_SESSION = (time(13, 0), time(17, 0))     # 1pm-5pm GMT
+    # Trading sessions (GMT/UTC times)
+    LONDON_SESSION = (time(8, 0), time(12, 0))
+    NY_SESSION = (time(13, 0), time(17, 0))
     
-    # Conservative risk management for small accounts
-    MIN_RISK_PER_TRADE = 0.5  # 0.5%
-    MAX_RISK_PER_TRADE = 1.0  # 1.0%
+    # More realistic risk management
+    MIN_RISK_PER_TRADE = 0.5
+    MAX_RISK_PER_TRADE = 1.0
     MAX_DAILY_TRADES = 5
-    MAX_DAILY_RISK = 3.0  # Stop trading if risked 3% in a day
+    MAX_DAILY_RISK = 3.0
     
-    # Quality filters
-    MIN_CONFIDENCE = 70  # Only take 70%+ setups
-    MIN_RISK_REWARD = 2.0  # Minimum 1:2 R:R
+    # FIXED: More realistic thresholds
+    MIN_CONFIDENCE = 55  # Lowered from 70
+    MIN_RISK_REWARD = 1.5  # Lowered from 2.0
     
-    # Symbols (only most liquid)
     SYMBOLS = ['V75', 'V100']
 
 @dataclass
@@ -85,19 +72,15 @@ class TradeSignal:
     reasoning: List[str] = field(default_factory=list)
     session: str = ""
 
-# ============================================================================
-# RISK MANAGER - SMALL ACCOUNT FOCUSED
-# ============================================================================
 class SmallAccountRiskManager:
     def __init__(self):
         self.daily_trades_taken = 0
         self.daily_risk_used = 0.0
         self.consecutive_losses = 0
-        self.last_reset = datetime.now().date()
+        self.last_reset = datetime.now(timezone.utc).date()
         
     def reset_daily_counters(self):
-        """Reset counters at start of new day"""
-        today = datetime.now().date()
+        today = datetime.now(timezone.utc).date()
         if today != self.last_reset:
             self.daily_trades_taken = 0
             self.daily_risk_used = 0.0
@@ -105,51 +88,38 @@ class SmallAccountRiskManager:
             logger.info("📅 Daily counters reset")
     
     def can_trade(self) -> Tuple[bool, str]:
-        """Check if we can take another trade"""
         self.reset_daily_counters()
         
-        # Daily trade limit
         if self.daily_trades_taken >= TradingConfig.MAX_DAILY_TRADES:
             return False, f"Daily limit reached ({TradingConfig.MAX_DAILY_TRADES} trades)"
         
-        # Daily risk limit
         if self.daily_risk_used >= TradingConfig.MAX_DAILY_RISK:
             return False, f"Daily risk limit reached ({TradingConfig.MAX_DAILY_RISK}%)"
         
-        # Consecutive losses circuit breaker
         if self.consecutive_losses >= 3:
             return False, f"3 consecutive losses - taking a break"
         
         return True, "OK"
     
-    def calculate_position_size(self, confidence: float, account_size: float = 100) -> float:
-        """
-        Conservative position sizing for small accounts
-        Higher confidence = slightly larger size
-        """
+    def calculate_position_size(self, confidence: float) -> float:
         base_risk = TradingConfig.MIN_RISK_PER_TRADE
         
-        if confidence >= 80:
-            risk_pct = TradingConfig.MAX_RISK_PER_TRADE  # 1.0%
-        elif confidence >= 75:
-            risk_pct = 0.8  # 0.8%
+        if confidence >= 75:
+            risk_pct = TradingConfig.MAX_RISK_PER_TRADE
+        elif confidence >= 65:
+            risk_pct = 0.75
         else:
-            risk_pct = base_risk  # 0.5%
+            risk_pct = base_risk
         
-        # Reduce after losses
         if self.consecutive_losses >= 2:
-            risk_pct *= 0.5  # Half size after 2 losses
+            risk_pct *= 0.5
         
         return risk_pct
     
     def record_trade(self, risk_pct: float):
-        """Record that we took a trade"""
         self.daily_trades_taken += 1
         self.daily_risk_used += risk_pct
 
-# ============================================================================
-# TELEGRAM NOTIFIER
-# ============================================================================
 class TelegramNotifier:
     def __init__(self, token: str, chat_id: str):
         self.token = token
@@ -159,7 +129,7 @@ class TelegramNotifier:
     def send_signal(self, signal: TradeSignal) -> bool:
         try:
             a_emoji = "🟢 LONG" if signal.action == "BUY" else "🔴 SHORT"
-            quality_emoji = "💎" if signal.confidence >= 80 else "⭐"
+            quality_emoji = "💎" if signal.confidence >= 75 else "⭐"
             
             message = f"""
 {quality_emoji} <b>SYNTHETIC SIGNAL - {signal.quality_score}</b>
@@ -189,13 +159,11 @@ class TelegramNotifier:
 • Enter at market price immediately
 • Set SL/TP and walk away
 • Don't overtrade - max 5 trades/day
-• Each winner covers 2+ losses
 
 <i>🆔 {signal.signal_id}</i>
 <i>⏱️ {signal.timestamp.strftime('%H:%M:%S %Z')}</i>
 
 <b>💪 Small Account Growth Strategy</b>
-Quality > Quantity | Patience = Profit
 """
             return self._send_message(message)
         except Exception as e:
@@ -211,9 +179,6 @@ Quality > Quantity | Patience = Profit
         except:
             return False
 
-# ============================================================================
-# DATA FETCHER - M15 & H1 ONLY
-# ============================================================================
 class DerivDataFetcher:
     SYMBOLS = {
         'V75': 'R_75',
@@ -223,12 +188,6 @@ class DerivDataFetcher:
     GRANULARITIES = {
         'M15': 900,
         'H1': 3600,
-    }
-    
-    # Average spreads during high liquidity periods
-    SPREADS = {
-        'V75': 0.00018,  # ~1.8 pips
-        'V100': 0.00022, # ~2.2 pips
     }
     
     def __init__(self, app_id: str = "1089"):
@@ -256,7 +215,6 @@ class DerivDataFetcher:
             return None
     
     def get_multi_timeframe_data(self, symbol: str) -> Dict[str, pd.DataFrame]:
-        """Fetch M15 and H1 data"""
         deriv_symbol = self.SYMBOLS.get(symbol)
         if not deriv_symbol:
             return {}
@@ -283,6 +241,7 @@ class DerivDataFetcher:
                         df[cols] = df[cols].astype(float)
                         df['time'] = pd.to_datetime(df['time'], unit='s')
                         result[tf_name] = df
+                        logger.info(f"✅ Fetched {len(df)} {tf_name} candles for {symbol}")
                 except Exception as e:
                     logger.error(f"Error processing {tf_name}: {e}")
                     continue
@@ -291,32 +250,28 @@ class DerivDataFetcher:
         
         return result
 
-# ============================================================================
-# INDICATORS - SIMPLE & EFFECTIVE
-# ============================================================================
 class Indicators:
     
     @staticmethod
     def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
         """Add proven mean reversion indicators"""
         
-        # Moving averages
         df['ema_20'] = df['close'].ewm(span=20, adjust=False).mean()
         df['ema_50'] = df['close'].ewm(span=50, adjust=False).mean()
         df['sma_100'] = df['close'].rolling(window=100).mean()
         
-        # Bollinger Bands (20, 2.5) - wider for M15/H1
+        # Bollinger Bands (20, 2.0) - FIXED: More standard deviation
         df['bb_middle'] = df['close'].rolling(window=20).mean()
         bb_std = df['close'].rolling(window=20).std()
-        df['bb_upper'] = df['bb_middle'] + (bb_std * 2.5)
-        df['bb_lower'] = df['bb_middle'] - (bb_std * 2.5)
+        df['bb_upper'] = df['bb_middle'] + (bb_std * 2.0)  # Changed from 2.5
+        df['bb_lower'] = df['bb_middle'] - (bb_std * 2.0)
         
-        # Z-Score (100-period)
-        mean_100 = df['close'].rolling(window=100).mean()
-        std_100 = df['close'].rolling(window=100).std()
-        df['z_score'] = (df['close'] - mean_100) / std_100
+        # Z-Score (50-period) - FIXED: Shorter period for more signals
+        mean_50 = df['close'].rolling(window=50).mean()
+        std_50 = df['close'].rolling(window=50).std()
+        df['z_score'] = (df['close'] - mean_50) / std_50
         
-        # ATR (14-period) for position sizing
+        # ATR
         high_low = df['high'] - df['low']
         high_close = np.abs(df['high'] - df['close'].shift())
         low_close = np.abs(df['low'] - df['close'].shift())
@@ -324,7 +279,7 @@ class Indicators:
         true_range = np.max(ranges, axis=1)
         df['atr'] = pd.Series(true_range).rolling(window=14).mean()
         
-        # RSI (14-period)
+        # RSI
         delta = df['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -335,29 +290,22 @@ class Indicators:
         df['volatility'] = df['close'].pct_change().rolling(window=20).std()
         df['vol_ma'] = df['volatility'].rolling(window=50).mean()
         
-        # Distance from mean
         df['distance_from_mean'] = ((df['close'] - df['bb_middle']) / df['bb_middle']) * 100
         
         df.dropna(inplace=True)
         return df
 
-# ============================================================================
-# HIGH QUALITY MEAN REVERSION STRATEGY
-# ============================================================================
 class MeanReversionStrategy:
     
     @staticmethod
     def analyze(df_m15: pd.DataFrame, df_h1: pd.DataFrame) -> Tuple[Optional[str], float, List[str], float]:
         """
-        Ultra-selective mean reversion for small accounts
+        FIXED: More realistic mean reversion detection
         
-        Requirements:
-        1. Extreme Z-score deviation (2.5σ+)
-        2. H1 confirms ranging market
-        3. RSI extreme
-        4. Price at BB extreme
-        5. Low volatility (stable reversion)
-        6. Clear risk/reward setup
+        Key changes:
+        - Z-score threshold lowered to 1.8σ (from 2.5σ)
+        - Simplified scoring (removed overly strict filters)
+        - More forgiving BB and RSI thresholds
         """
         if len(df_m15) < 100 or len(df_h1) < 100:
             return None, 0.0, ["Insufficient data"], 0.0
@@ -369,95 +317,93 @@ class MeanReversionStrategy:
         score = 0.0
         action = None
         
-        # 1. EXTREME Z-SCORE (25 points) - PRIMARY SIGNAL
+        # 1. Z-SCORE CHECK (30 points) - FIXED: Lower threshold
         z_score = last_m15['z_score']
         
-        if z_score < -2.5:
+        if z_score < -1.8:  # Changed from -2.5
             action = "BUY"
-            score += 25
-            reasoning.append(f"✅ Extreme oversold: {abs(z_score):.2f}σ below mean")
-        elif z_score > 2.5:
+            if z_score < -2.2:
+                score += 30
+                reasoning.append(f"✅ Strongly oversold: {abs(z_score):.2f}σ")
+            else:
+                score += 25
+                reasoning.append(f"✅ Oversold: {abs(z_score):.2f}σ")
+        elif z_score > 1.8:  # Changed from 2.5
             action = "SELL"
-            score += 25
-            reasoning.append(f"✅ Extreme overbought: {abs(z_score):.2f}σ above mean")
+            if z_score > 2.2:
+                score += 30
+                reasoning.append(f"✅ Strongly overbought: {abs(z_score):.2f}σ")
+            else:
+                score += 25
+                reasoning.append(f"✅ Overbought: {abs(z_score):.2f}σ")
         else:
-            return None, 0.0, [f"❌ Z-score {z_score:.2f} not extreme (need 2.5σ+)"], z_score
+            return None, 0.0, [f"❌ Z-score {z_score:.2f} not extreme enough (need 1.8σ+)"], z_score
         
-        # 2. BOLLINGER BAND EXTREME (20 points)
+        # 2. BOLLINGER BAND CHECK (25 points) - FIXED: More forgiving
         if action == "BUY":
-            if last_m15['close'] <= last_m15['bb_lower']:
-                score += 20
-                reasoning.append("✅ Price at/below lower BB")
+            bb_distance = (last_m15['close'] - last_m15['bb_lower']) / last_m15['atr']
+            if bb_distance < 0.5:  # Within 0.5 ATR of lower band
+                score += 25
+                reasoning.append("✅ Near/below lower BB")
+            elif bb_distance < 1.0:
+                score += 15
+                reasoning.append("⚠️ Approaching lower BB")
             else:
-                return None, 0.0, ["❌ Price not at BB extreme"], z_score
+                score += 5
         elif action == "SELL":
-            if last_m15['close'] >= last_m15['bb_upper']:
-                score += 20
-                reasoning.append("✅ Price at/above upper BB")
+            bb_distance = (last_m15['bb_upper'] - last_m15['close']) / last_m15['atr']
+            if bb_distance < 0.5:
+                score += 25
+                reasoning.append("✅ Near/above upper BB")
+            elif bb_distance < 1.0:
+                score += 15
+                reasoning.append("⚠️ Approaching upper BB")
             else:
-                return None, 0.0, ["❌ Price not at BB extreme"], z_score
+                score += 5
         
-        # 3. RSI CONFIRMATION (15 points)
+        # 3. RSI CHECK (20 points) - FIXED: More realistic thresholds
         rsi = last_m15['rsi']
-        if action == "BUY" and rsi < 30:
-            score += 15
-            reasoning.append(f"✅ RSI oversold ({rsi:.0f})")
-        elif action == "SELL" and rsi > 70:
-            score += 15
-            reasoning.append(f"✅ RSI overbought ({rsi:.0f})")
-        elif action == "BUY" and rsi < 40:
-            score += 10
-            reasoning.append(f"⚠️ RSI low but not extreme ({rsi:.0f})")
-        elif action == "SELL" and rsi > 60:
-            score += 10
-            reasoning.append(f"⚠️ RSI high but not extreme ({rsi:.0f})")
-        else:
-            score += 5
-            reasoning.append(f"⚠️ RSI neutral ({rsi:.0f})")
+        if action == "BUY":
+            if rsi < 30:
+                score += 20
+                reasoning.append(f"✅ RSI oversold ({rsi:.0f})")
+            elif rsi < 40:
+                score += 15
+                reasoning.append(f"⚠️ RSI low ({rsi:.0f})")
+            else:
+                score += 5
+        elif action == "SELL":
+            if rsi > 70:
+                score += 20
+                reasoning.append(f"✅ RSI overbought ({rsi:.0f})")
+            elif rsi > 60:
+                score += 15
+                reasoning.append(f"⚠️ RSI high ({rsi:.0f})")
+            else:
+                score += 5
         
-        # 4. H1 TIMEFRAME CONFIRMATION (15 points)
+        # 4. H1 CONFIRMATION (15 points) - FIXED: More forgiving
         h1_z = last_h1['z_score']
-        if (action == "BUY" and h1_z < -1.5) or (action == "SELL" and h1_z > 1.5):
+        if (action == "BUY" and h1_z < -1.0) or (action == "SELL" and h1_z > 1.0):
             score += 15
             reasoning.append(f"✅ H1 confirms deviation ({h1_z:.2f}σ)")
         elif (action == "BUY" and h1_z < 0) or (action == "SELL" and h1_z > 0):
-            score += 8
-            reasoning.append(f"⚠️ H1 directional alignment ({h1_z:.2f}σ)")
-        else:
-            score += 3
-            reasoning.append(f"⚠️ H1 conflicting ({h1_z:.2f}σ)")
-        
-        # 5. VOLATILITY CHECK (10 points) - Want stable conditions
-        vol_ratio = last_m15['volatility'] / last_m15['vol_ma']
-        if vol_ratio < 1.3:
             score += 10
-            reasoning.append(f"✅ Stable volatility (ratio: {vol_ratio:.2f})")
-        elif vol_ratio < 1.6:
-            score += 5
-            reasoning.append(f"⚠️ Moderate volatility (ratio: {vol_ratio:.2f})")
+            reasoning.append(f"⚠️ H1 alignment ({h1_z:.2f}σ)")
         else:
-            score += 0
-            reasoning.append(f"❌ High volatility (ratio: {vol_ratio:.2f})")
+            score += 5
         
-        # 6. TREND ALIGNMENT (10 points) - Prefer ranging markets
-        if abs(last_m15['ema_20'] - last_m15['sma_100']) / last_m15['sma_100'] < 0.01:
+        # 5. VOLATILITY (10 points)
+        vol_ratio = last_m15['volatility'] / last_m15['vol_ma'] if last_m15['vol_ma'] > 0 else 1.0
+        if vol_ratio < 1.5:
             score += 10
-            reasoning.append("✅ Market ranging (ideal for MR)")
+            reasoning.append(f"✅ Normal volatility ({vol_ratio:.2f})")
         else:
             score += 5
-            reasoning.append("⚠️ Market has directional bias")
-        
-        # 7. DISTANCE FROM MEAN (5 points)
-        distance = abs(last_m15['distance_from_mean'])
-        if distance > 2.0:
-            score += 5
-            reasoning.append(f"✅ Far from mean ({distance:.2f}%)")
+            reasoning.append(f"⚠️ Elevated volatility ({vol_ratio:.2f})")
         
         return action, score, reasoning, z_score
 
-# ============================================================================
-# BOT CONTROLLER
-# ============================================================================
 class SmallAccountBot:
     
     def __init__(self):
@@ -474,52 +420,48 @@ class SmallAccountBot:
         self.processed_signals = deque(maxlen=50)
     
     def is_trading_session(self) -> Tuple[bool, str]:
-        """Check if we're in a high-quality trading session"""
-        now = datetime.now().time()
+        """FIXED: Proper timezone handling"""
+        # Get current UTC time
+        now_utc = datetime.now(timezone.utc).time()
         
         # London session
-        if TradingConfig.LONDON_SESSION[0] <= now <= TradingConfig.LONDON_SESSION[1]:
+        if TradingConfig.LONDON_SESSION[0] <= now_utc <= TradingConfig.LONDON_SESSION[1]:
             return True, "LONDON"
         
         # NY session
-        if TradingConfig.NY_SESSION[0] <= now <= TradingConfig.NY_SESSION[1]:
+        if TradingConfig.NY_SESSION[0] <= now_utc <= TradingConfig.NY_SESSION[1]:
             return True, "NEW YORK"
         
-        return False, ""
+        # ADDED: Allow 24/7 operation for testing
+        # Comment this out if you only want session trading
+        return True, "24/7 MODE"
     
     def calculate_levels(self, df: pd.DataFrame, action: str) -> dict:
-        """
-        Calculate entry, SL, and TP with minimum 1:2 R:R
-        
-        Strategy:
-        - Entry: Current price
-        - SL: Beyond BB extreme (2.5 ATR)
-        - TP: Mean + buffer (targets 1:2.5 R:R)
-        """
+        """Calculate entry, SL, and TP - FIXED: More realistic targets"""
         last = df.iloc[-1]
         price = last['close']
         atr = last['atr']
         mean = last['bb_middle']
         
-        # Stop loss: 2.5 ATR beyond entry (wide enough for M15/H1)
-        sl_distance = atr * 2.5
+        # FIXED: Tighter stops (2.0 ATR instead of 2.5)
+        sl_distance = atr * 2.0
         
         if action == "BUY":
             sl = price - sl_distance
-            # TP: Mean + 25% (conservative, increases R:R)
-            tp = mean + (mean - price) * 0.25
+            # Target mean
+            tp = mean
             
-            # Ensure minimum 1:2 R:R
+            # Ensure minimum 1:1.5 R:R
             tp_distance = tp - price
-            if tp_distance < (sl_distance * 2.0):
-                tp = price + (sl_distance * 2.5)  # Force 1:2.5 R:R
+            if tp_distance < (sl_distance * 1.5):
+                tp = price + (sl_distance * 1.8)
         else:
             sl = price + sl_distance
-            tp = mean - (price - mean) * 0.25
+            tp = mean
             
             tp_distance = price - tp
-            if tp_distance < (sl_distance * 2.0):
-                tp = price - (sl_distance * 2.5)
+            if tp_distance < (sl_distance * 1.5):
+                tp = price - (sl_distance * 1.8)
         
         rr = abs(tp - price) / abs(price - sl)
         
@@ -532,17 +474,18 @@ class SmallAccountBot:
         }
     
     def run(self):
-        logger.info("🚀 STARTING SMALL ACCOUNT BUILDER v5.0")
-        logger.info(f"Symbols: {TradingConfig.SYMBOLS}")
-        logger.info(f"Max trades/day: {TradingConfig.MAX_DAILY_TRADES}")
+        logger.info("=" * 60)
+        logger.info("🚀 SMALL ACCOUNT BUILDER v5.1 - FIXED VERSION")
+        logger.info("=" * 60)
         
         # Check if in trading session
         in_session, session_name = self.is_trading_session()
         if not in_session:
-            logger.info("⏰ Outside trading sessions (London: 8am-12pm, NY: 1pm-5pm GMT)")
+            logger.info("⏰ Outside trading sessions")
             return
         
         logger.info(f"📊 Trading Session: {session_name}")
+        logger.info(f"🕐 Current UTC time: {datetime.now(timezone.utc).strftime('%H:%M:%S')}")
         
         # Check risk limits
         can_trade, reason = self.risk_manager.can_trade()
@@ -553,12 +496,16 @@ class SmallAccountBot:
         signals_found = 0
         
         for symbol in TradingConfig.SYMBOLS:
+            logger.info(f"\n{'='*40}")
+            logger.info(f"Analyzing {symbol}...")
+            logger.info(f"{'='*40}")
+            
             try:
-                # Fetch M15 and H1 data
+                # Fetch data
                 mtf_data = self.fetcher.get_multi_timeframe_data(symbol)
                 
                 if 'M15' not in mtf_data or 'H1' not in mtf_data:
-                    logger.warning(f"Incomplete data for {symbol}")
+                    logger.warning(f"❌ Incomplete data for {symbol}")
                     continue
                 
                 # Add indicators
@@ -566,45 +513,53 @@ class SmallAccountBot:
                 df_h1 = Indicators.add_indicators(mtf_data['H1'])
                 
                 if df_m15.empty or df_h1.empty:
+                    logger.warning(f"❌ Empty dataframe after indicators")
                     continue
                 
-                # Analyze for mean reversion setup
+                # Log current market conditions
+                last_m15 = df_m15.iloc[-1]
+                logger.info(f"📊 Current Price: {last_m15['close']:.5f}")
+                logger.info(f"📊 Z-Score: {last_m15['z_score']:.2f}σ")
+                logger.info(f"📊 RSI: {last_m15['rsi']:.0f}")
+                logger.info(f"📊 BB Position: Lower={last_m15['bb_lower']:.5f}, Mid={last_m15['bb_middle']:.5f}, Upper={last_m15['bb_upper']:.5f}")
+                
+                # Analyze
                 action, confidence, reasoning, z_score = \
                     MeanReversionStrategy.analyze(df_m15, df_h1)
                 
                 if not action:
-                    logger.info(f"{symbol}: No setup. {reasoning[0] if reasoning else 'N/A'}")
+                    logger.info(f"❌ No setup: {reasoning[0] if reasoning else 'N/A'}")
                     continue
                 
-                # Strict quality filter: 70%+ only
+                logger.info(f"✅ Setup found: {action} with {confidence:.0f}% confidence")
+                
+                # Check confidence threshold
                 if confidence < TradingConfig.MIN_CONFIDENCE:
-                    logger.info(f"{symbol}: Confidence {confidence:.0f}% below {TradingConfig.MIN_CONFIDENCE}% threshold")
+                    logger.info(f"❌ Confidence {confidence:.0f}% below threshold {TradingConfig.MIN_CONFIDENCE}%")
                     continue
                 
-                # Check duplicates (1-hour window to avoid re-entering same setup)
+                # Check duplicates
                 sig_key = f"{symbol}_{action}_{int(datetime.now().timestamp() / 3600)}"
                 if sig_key in self.processed_signals:
-                    logger.info(f"{symbol}: Duplicate signal this hour")
+                    logger.info(f"⚠️ Duplicate signal this hour")
                     continue
                 
                 # Calculate levels
                 levels = self.calculate_levels(df_m15, action)
+                logger.info(f"📊 Entry: {levels['entry']:.5f}, SL: {levels['sl']:.5f}, TP: {levels['tp']:.5f}, R:R: 1:{levels['rr']:.1f}")
                 
-                # Verify minimum R:R
+                # Verify R:R
                 if levels['rr'] < TradingConfig.MIN_RISK_REWARD:
-                    logger.info(f"{symbol}: R:R {levels['rr']:.1f} below minimum {TradingConfig.MIN_RISK_REWARD}")
+                    logger.info(f"❌ R:R {levels['rr']:.1f} below minimum {TradingConfig.MIN_RISK_REWARD}")
                     continue
                 
                 # Position sizing
                 pos_size = self.risk_manager.calculate_position_size(confidence)
                 
-                # Expected hold time (mean reversion on M15 typically 2-6 hours)
-                expected_hold = 3.0  # hours
-                
                 # Quality classification
-                if confidence >= 85:
+                if confidence >= 75:
                     quality = "PREMIUM SETUP"
-                elif confidence >= 75:
+                elif confidence >= 65:
                     quality = "HIGH QUALITY"
                 else:
                     quality = "GOOD SETUP"
@@ -620,30 +575,31 @@ class SmallAccountBot:
                     take_profit=levels['tp'],
                     risk_reward_ratio=levels['rr'],
                     position_size_pct=pos_size,
-                    expected_hold_hours=expected_hold,
+                    expected_hold_hours=3.0,
                     z_score=z_score,
                     quality_score=quality,
-                    timestamp=datetime.now(),
+                    timestamp=datetime.now(timezone.utc),
                     reasoning=reasoning,
                     session=session_name
                 )
                 
                 # Send signal
-                logger.info(f"✅ {symbol} {action} @ {confidence:.0f}% | R:R 1:{levels['rr']:.1f}")
+                logger.info(f"🚀 SENDING SIGNAL: {symbol} {action} @ {confidence:.0f}%")
                 if self.notifier.send_signal(signal):
                     self.processed_signals.append(sig_key)
                     self.risk_manager.record_trade(pos_size)
                     signals_found += 1
-                    logger.info(f"📤 Signal sent | Daily: {self.risk_manager.daily_trades_taken}/{TradingConfig.MAX_DAILY_TRADES}")
+                    logger.info(f"✅ Signal sent! Daily: {self.risk_manager.daily_trades_taken}/{TradingConfig.MAX_DAILY_TRADES}")
+                else:
+                    logger.error("❌ Failed to send Telegram message")
                 
             except Exception as e:
-                logger.error(f"Error processing {symbol}: {e}", exc_info=True)
+                logger.error(f"❌ Error processing {symbol}: {e}", exc_info=True)
         
-        logger.info(f"📊 Scan complete: {signals_found} signal(s) sent")
+        logger.info(f"\n{'='*60}")
+        logger.info(f"📊 SCAN COMPLETE: {signals_found} signal(s) sent")
+        logger.info(f"{'='*60}\n")
 
-# ============================================================================
-# MAIN
-# ============================================================================
 if __name__ == "__main__":
     if not os.getenv('TELEGRAM_BOT_TOKEN') or not os.getenv('MAIN_CHAT_ID'):
         print("❌ Error: Set TELEGRAM_BOT_TOKEN and MAIN_CHAT_ID environment variables.")
@@ -651,27 +607,19 @@ if __name__ == "__main__":
     
     print("""
 ╔══════════════════════════════════════════════════╗
-║   SMALL ACCOUNT BUILDER v5.0                     ║
-║   Optimized for $50-$500 accounts                ║
-║   Quality > Quantity | Patience = Profit         ║
+║   SMALL ACCOUNT BUILDER v5.1 - FIXED            ║
+║   More realistic signal generation               ║
 ╚══════════════════════════════════════════════════╝
 
-Trading Schedule:
-  London:  8am-12pm GMT (High liquidity)
-  NY:      1pm-5pm GMT  (High liquidity)
+Key Fixes:
+  ✅ Z-score threshold lowered to 1.8σ (was 2.5σ)
+  ✅ Bollinger Band checks more forgiving
+  ✅ Confidence threshold lowered to 55% (was 70%)
+  ✅ Better timezone handling
+  ✅ Detailed logging for debugging
+  ✅ 24/7 mode enabled (disable in code if needed)
 
-Strategy:
-  • Mean Reversion ONLY (70%+ setups)
-  • 3-5 trades per day maximum
-  • 1:2+ Risk:Reward required
-  • 0.5-1% risk per trade
-  
-Expected Performance:
-  • 60-70% win rate
-  • 5-10% monthly growth
-  • Low stress, sustainable
-
-Run this bot during trading sessions for best results.
+Run this and you SHOULD see signals now!
     """)
     
     bot = SmallAccountBot()
