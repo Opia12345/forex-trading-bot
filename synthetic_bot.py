@@ -1,19 +1,6 @@
 """
-BOOM & CRASH: REAL WORKING SYSTEM
-Based on actual profitable strategies from successful traders
-
-PROVEN APPROACH:
-1. Trade WITH the trend, not against spikes (trend-following beats mean reversion)
-2. Use support/resistance levels (where spikes actually occur)
-3. Focus on Crash 300/Boom 300 (least volatile = most predictable)
-4. Scalp small profits quickly (10-20 pips)
-5. Trade during London/NY overlap (highest liquidity)
-
-This system combines:
-- Support/resistance detection (price action)
-- Trend identification (moving averages)
-- Quick scalping exits (don't hold through spikes)
-- Strict risk management (0.5-1% per trade)
+BOOM & CRASH: CORRECTED VERSION
+Using BOOM500/CRASH500 (confirmed working) and BOOM300N/CRASH300N
 """
 
 import os
@@ -43,42 +30,42 @@ logger = logging.getLogger(__name__)
 
 # --- Configuration ---
 class Config:
-    """Optimized configuration based on research"""
+    """CORRECTED: Using working symbol codes"""
     
-    # Best symbols for beginners (least volatile)
+    # OPTION 1: Use 500s (confirmed working, slightly more volatile but tradeable)
     SYMBOLS = {
-        'CRASH_300': 'CRASH300',  # Most predictable
-        'BOOM_300': 'BOOM300',    # Most predictable
-    }
-    
-    # Can add these after mastering 300s
-    ADVANCED_SYMBOLS = {
         'CRASH_500': 'CRASH500',
         'BOOM_500': 'BOOM500',
     }
+    
+    # OPTION 2: Uncomment to use 300s (use BOOM300N/CRASH300N - note the "N")
+    # SYMBOLS = {
+    #     'CRASH_300': 'CRASH300N',
+    #     'BOOM_300': 'BOOM300N',
+    # }
     
     # Trading sessions (UTC)
     LONDON_START = time(8, 0)
     LONDON_END = time(12, 0)
     NY_START = time(13, 0)
     NY_END = time(17, 0)
-    OVERLAP_START = time(13, 0)  # Best time: London/NY overlap
+    OVERLAP_START = time(13, 0)
     OVERLAP_END = time(16, 0)
     
     # Risk Management (Conservative)
-    RISK_PER_TRADE = 0.5  # 0.5% only - very conservative
+    RISK_PER_TRADE = 0.5
     MAX_DAILY_TRADES = 5
     MAX_DAILY_LOSS = 2.0
     MAX_CONCURRENT_TRADES = 2
     
-    # Strategy Parameters (Based on research)
+    # Strategy Parameters
     MIN_CONFIDENCE = 70
-    SCALP_TARGET_PIPS = 15  # Quick 10-20 pip targets
-    STOP_LOSS_PIPS = 30     # 1:2 risk:reward minimum
+    SCALP_TARGET_PIPS = 20  # Adjusted for 500 indices
+    STOP_LOSS_PIPS = 40     # Adjusted for 500 indices
     
     # Support/Resistance
     LOOKBACK_PERIODS = 100
-    TOUCH_THRESHOLD = 0.002  # 0.2% threshold for level touch
+    TOUCH_THRESHOLD = 0.002
     
     # Telegram
     TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
@@ -93,18 +80,24 @@ class Signal:
     stop_loss: float
     take_profit: float
     confidence: float
-    setup_type: str  # "support_buy", "resistance_sell", "trend_buy", "trend_sell"
+    setup_type: str
     timestamp: datetime
     reasoning: List[str] = field(default_factory=list)
 
 class DataFetcher:
-    """Fetch Deriv data"""
+    """Data fetcher with correct symbol codes"""
     
     SYMBOL_MAP = {
-        'BOOM_300': 'BOOM300',
-        'BOOM_500': 'BOOM500',
-        'CRASH_300': 'CRASH300',
-        'CRASH_500': 'CRASH500',
+        'BOOM_300': 'BOOM300N',    # Corrected: Added "N"
+        'BOOM_500': 'BOOM500',      # Confirmed working
+        'BOOM_600': 'BOOM600',
+        'BOOM_900': 'BOOM900',
+        'BOOM_1000': 'BOOM1000',
+        'CRASH_300': 'CRASH300N',   # Corrected: Added "N"
+        'CRASH_500': 'CRASH500',    # Confirmed working
+        'CRASH_600': 'CRASH600',
+        'CRASH_900': 'CRASH900',
+        'CRASH_1000': 'CRASH1000',
     }
     
     def __init__(self, app_id: str = "1089"):
@@ -126,7 +119,13 @@ class DataFetcher:
                 await ws.send(json.dumps(request))
                 response = await asyncio.wait_for(ws.recv(), timeout=20)
                 data = json.loads(response)
-                return data.get('candles')
+                
+                if 'candles' in data:
+                    return data.get('candles')
+                elif 'error' in data:
+                    logger.error(f"API Error for {symbol}: {data['error'].get('message')}")
+                    return None
+                    
         except Exception as e:
             logger.error(f"Error fetching {symbol}: {e}")
             return None
@@ -134,15 +133,23 @@ class DataFetcher:
     def get_candles(self, symbol: str) -> Optional[pd.DataFrame]:
         deriv_symbol = self.SYMBOL_MAP.get(symbol)
         if not deriv_symbol:
+            logger.error(f"Unknown symbol: {symbol}")
             return None
         
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         
         try:
             candles = loop.run_until_complete(self._fetch_async(deriv_symbol))
             
             if not candles:
+                logger.error(f"No candles returned for {symbol} ({deriv_symbol})")
                 return None
             
             df = pd.DataFrame(candles)
@@ -155,21 +162,21 @@ class DataFetcher:
             df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
             df['time'] = pd.to_datetime(df['time'], unit='s')
             
+            logger.info(f"✅ Loaded {len(df)} candles for {symbol}")
             return df
-        finally:
-            loop.close()
+        except Exception as e:
+            logger.error(f"Error processing candles: {e}", exc_info=True)
+            return None
 
 class Indicators:
     """Technical indicators"""
     
     @staticmethod
     def add_all(df: pd.DataFrame) -> pd.DataFrame:
-        # Moving averages for trend
         df['ema_20'] = df['close'].ewm(span=20, adjust=False).mean()
         df['ema_50'] = df['close'].ewm(span=50, adjust=False).mean()
         df['sma_100'] = df['close'].rolling(window=100).mean()
         
-        # ATR for stop loss
         high_low = df['high'] - df['low']
         high_close = np.abs(df['high'] - df['close'].shift())
         low_close = np.abs(df['low'] - df['close'].shift())
@@ -177,7 +184,6 @@ class Indicators:
         true_range = np.max(ranges, axis=1)
         df['atr'] = pd.Series(true_range).rolling(window=14).mean()
         
-        # RSI
         delta = df['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -192,40 +198,34 @@ class SupportResistance:
     
     @staticmethod
     def find_levels(df: pd.DataFrame, lookback: int = 100) -> Dict[str, List[float]]:
-        """Find key support and resistance levels"""
         recent = df.tail(lookback)
         
-        # Find swing highs and lows
         highs = []
         lows = []
         
         for i in range(2, len(recent) - 2):
-            # Swing high
             if (recent.iloc[i]['high'] > recent.iloc[i-1]['high'] and 
                 recent.iloc[i]['high'] > recent.iloc[i-2]['high'] and
                 recent.iloc[i]['high'] > recent.iloc[i+1]['high'] and
                 recent.iloc[i]['high'] > recent.iloc[i+2]['high']):
                 highs.append(recent.iloc[i]['high'])
             
-            # Swing low
             if (recent.iloc[i]['low'] < recent.iloc[i-1]['low'] and 
                 recent.iloc[i]['low'] < recent.iloc[i-2]['low'] and
                 recent.iloc[i]['low'] < recent.iloc[i+1]['low'] and
                 recent.iloc[i]['low'] < recent.iloc[i+2]['low']):
                 lows.append(recent.iloc[i]['low'])
         
-        # Cluster similar levels
         resistance_levels = SupportResistance._cluster_levels(highs) if highs else []
         support_levels = SupportResistance._cluster_levels(lows) if lows else []
         
         return {
-            'resistance': resistance_levels[:3],  # Top 3
-            'support': support_levels[:3]         # Top 3
+            'resistance': resistance_levels[:3],
+            'support': support_levels[:3]
         }
     
     @staticmethod
     def _cluster_levels(levels: List[float], threshold: float = 0.005) -> List[float]:
-        """Cluster nearby levels"""
         if not levels:
             return []
         
@@ -245,7 +245,6 @@ class SupportResistance:
     
     @staticmethod
     def is_near_level(price: float, level: float, threshold: float = 0.002) -> bool:
-        """Check if price is near a level"""
         return abs(price - level) / level < threshold
 
 class Strategy:
@@ -253,11 +252,6 @@ class Strategy:
     
     @staticmethod
     def analyze_crash(df: pd.DataFrame) -> Tuple[Optional[str], float, List[str], str]:
-        """
-        CRASH Strategy:
-        - SELL at resistance (crashes happen at resistance)
-        - BUY at support during uptrend (ride the trend)
-        """
         if len(df) < 100:
             return None, 0.0, ["Insufficient data"], ""
         
@@ -266,13 +260,10 @@ class Strategy:
         score = 0.0
         setup_type = ""
         
-        # Get support/resistance
         levels = SupportResistance.find_levels(df, Config.LOOKBACK_PERIODS)
-        
-        # Determine trend
         trend = "up" if current['ema_20'] > current['ema_50'] else "down"
         
-        # SETUP 1: SELL at resistance (crash likely)
+        # SETUP 1: SELL at resistance
         for resistance in levels.get('resistance', []):
             if SupportResistance.is_near_level(current['close'], resistance, Config.TOUCH_THRESHOLD):
                 score += 50
@@ -291,7 +282,7 @@ class Strategy:
                 if score >= Config.MIN_CONFIDENCE:
                     return "SELL", score, reasoning, setup_type
         
-        # SETUP 2: BUY at support (ride uptrend)
+        # SETUP 2: BUY at support
         if trend == "up":
             for support in levels.get('support', []):
                 if SupportResistance.is_near_level(current['close'], support, Config.TOUCH_THRESHOLD):
@@ -314,11 +305,6 @@ class Strategy:
     
     @staticmethod
     def analyze_boom(df: pd.DataFrame) -> Tuple[Optional[str], float, List[str], str]:
-        """
-        BOOM Strategy:
-        - BUY at support (booms happen at support)
-        - SELL at resistance during downtrend (ride the trend)
-        """
         if len(df) < 100:
             return None, 0.0, ["Insufficient data"], ""
         
@@ -330,7 +316,7 @@ class Strategy:
         levels = SupportResistance.find_levels(df, Config.LOOKBACK_PERIODS)
         trend = "up" if current['ema_20'] > current['ema_50'] else "down"
         
-        # SETUP 1: BUY at support (boom likely)
+        # SETUP 1: BUY at support
         for support in levels.get('support', []):
             if SupportResistance.is_near_level(current['close'], support, Config.TOUCH_THRESHOLD):
                 score += 50
@@ -349,7 +335,7 @@ class Strategy:
                 if score >= Config.MIN_CONFIDENCE:
                     return "BUY", score, reasoning, setup_type
         
-        # SETUP 2: SELL at resistance (ride downtrend)
+        # SETUP 2: SELL at resistance
         if trend == "down":
             for resistance in levels.get('resistance', []):
                 if SupportResistance.is_near_level(current['close'], resistance, Config.TOUCH_THRESHOLD):
@@ -372,12 +358,9 @@ class Strategy:
     
     @staticmethod
     def calculate_levels(df: pd.DataFrame, action: str) -> Dict:
-        """Calculate entry, SL, TP for scalping"""
         current = df.iloc[-1]
         price = current['close']
         
-        # Convert pip targets to price
-        # For Boom/Crash: 1 point = 0.01 for most indices
         pip_value = 0.01
         
         if action == "BUY":
@@ -399,8 +382,6 @@ class Strategy:
         }
 
 class RiskManager:
-    """Risk management"""
-    
     def __init__(self):
         self.daily_trades = 0
         self.daily_loss = 0.0
@@ -434,8 +415,6 @@ class RiskManager:
         return True, "OK"
 
 class TelegramNotifier:
-    """Telegram notifications"""
-    
     def __init__(self, token: str, chat_id: str):
         self.token = token
         self.chat_id = chat_id
@@ -444,6 +423,7 @@ class TelegramNotifier:
     
     def send_signal(self, signal: Signal) -> bool:
         if not self.enabled:
+            logger.warning("⚠️  Telegram not configured")
             return False
         
         try:
@@ -480,12 +460,11 @@ TP: <code>{signal.take_profit:.2f}</code> ({Config.SCALP_TARGET_PIPS} pips)
                 "parse_mode": "HTML"
             }, timeout=10)
             return response.status_code == 200
-        except:
+        except Exception as e:
+            logger.error(f"Telegram error: {e}")
             return False
 
 class TradingBot:
-    """Main trading bot"""
-    
     def __init__(self):
         self.fetcher = DataFetcher()
         self.risk_manager = RiskManager()
@@ -493,39 +472,26 @@ class TradingBot:
         self.processed_signals = deque(maxlen=20)
     
     def is_trading_time(self) -> Tuple[bool, str]:
-        """Check if within trading session"""
         now = datetime.now(timezone.utc).time()
         
-        # Best time: London/NY overlap
         if Config.OVERLAP_START <= now <= Config.OVERLAP_END:
             return True, "OVERLAP (BEST)"
-        
-        # London session
         if Config.LONDON_START <= now <= Config.LONDON_END:
             return True, "LONDON"
-        
-        # NY session
         if Config.NY_START <= now <= Config.NY_END:
             return True, "NEW YORK"
         
-        # Allow 24/7 for testing (remove for session-only trading)
         return True, "24/7"
     
     def run(self):
         logger.info("=" * 70)
-        logger.info("🎯 BOOM & CRASH: PROVEN WORKING SYSTEM")
+        logger.info("🎯 BOOM & CRASH: CORRECTED VERSION")
         logger.info("=" * 70)
         
-        # Check trading time
         in_session, session_name = self.is_trading_time()
-        if not in_session:
-            logger.info("⏰ Outside trading hours")
-            return
-        
         logger.info(f"📊 Session: {session_name}")
         logger.info(f"🕐 Time: {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}")
         
-        # Check risk limits
         can_trade, reason = self.risk_manager.can_trade()
         if not can_trade:
             logger.warning(f"⛔ {reason}")
@@ -539,53 +505,46 @@ class TradingBot:
             logger.info(f"{'='*50}")
             
             try:
-                # Fetch data
                 df = self.fetcher.get_candles(symbol)
                 
                 if df is None or df.empty:
                     logger.warning(f"❌ No data for {symbol}")
                     continue
                 
-                # Add indicators
                 df = Indicators.add_all(df)
                 
                 if df.empty:
                     logger.warning(f"❌ Empty after indicators")
                     continue
                 
-                # Log current state
                 current = df.iloc[-1]
                 levels = SupportResistance.find_levels(df)
                 
                 logger.info(f"📊 Price: {current['close']:.2f}")
                 logger.info(f"📊 RSI: {current['rsi']:.0f}")
                 logger.info(f"📊 Trend: {'UP' if current['ema_20'] > current['ema_50'] else 'DOWN'}")
-                logger.info(f"📊 Support levels: {[f'{s:.2f}' for s in levels['support']]}")
-                logger.info(f"📊 Resistance levels: {[f'{r:.2f}' for r in levels['resistance']]}")
+                logger.info(f"📊 Support: {[f'{s:.2f}' for s in levels['support']]}")
+                logger.info(f"📊 Resistance: {[f'{r:.2f}' for r in levels['resistance']]}")
                 
-                # Analyze
                 if "CRASH" in symbol:
                     action, confidence, reasoning, setup_type = Strategy.analyze_crash(df)
                 else:
                     action, confidence, reasoning, setup_type = Strategy.analyze_boom(df)
                 
                 if not action:
-                    logger.info(f"❌ No setup: {reasoning[0] if reasoning else 'N/A'}")
+                    logger.info(f"❌ No setup found (Score: {confidence:.0f}%)")
                     continue
                 
-                logger.info(f"✅ Setup: {action} ({setup_type}) @ {confidence:.0f}%")
+                logger.info(f"✅ Setup found: {action} ({setup_type}) @ {confidence:.0f}%")
                 
-                # Check duplicate
                 sig_key = f"{symbol}_{action}_{int(datetime.now().timestamp() / 1800)}"
                 if sig_key in self.processed_signals:
-                    logger.info(f"⚠️ Duplicate (30min)")
+                    logger.info(f"⚠️  Duplicate signal (30min cooldown)")
                     continue
                 
-                # Calculate levels
                 levels_dict = Strategy.calculate_levels(df, action)
                 logger.info(f"📊 Entry: {levels_dict['entry']:.2f}, SL: {levels_dict['sl']:.2f}, TP: {levels_dict['tp']:.2f}")
                 
-                # Create signal
                 signal = Signal(
                     signal_id=f"{symbol}-{int(datetime.now().timestamp())}",
                     symbol=symbol,
@@ -599,68 +558,60 @@ class TradingBot:
                     reasoning=reasoning
                 )
                 
-                # Send signal
-                logger.info(f"🚀 SENDING: {symbol} {action}")
+                logger.info(f"🚀 SENDING SIGNAL: {symbol} {action}")
                 if self.notifier.send_signal(signal):
                     self.processed_signals.append(sig_key)
                     self.risk_manager.daily_trades += 1
                     self.risk_manager.active_trades += 1
                     signals_found += 1
-                    logger.info(f"✅ Sent! Daily: {self.risk_manager.daily_trades}/{Config.MAX_DAILY_TRADES}")
+                    logger.info(f"✅ Signal sent! Daily trades: {self.risk_manager.daily_trades}/{Config.MAX_DAILY_TRADES}")
                 else:
-                    logger.error("❌ Send failed")
+                    logger.error("❌ Failed to send signal")
                 
             except Exception as e:
-                logger.error(f"❌ Error: {e}", exc_info=True)
+                logger.error(f"❌ Error analyzing {symbol}: {e}", exc_info=True)
         
         logger.info(f"\n{'='*70}")
-        logger.info(f"📊 COMPLETE: {signals_found} signal(s)")
+        logger.info(f"📊 SCAN COMPLETE: {signals_found} signal(s) found")
         logger.info(f"{'='*70}\n")
 
 if __name__ == "__main__":
     if not os.getenv('TELEGRAM_BOT_TOKEN') or not os.getenv('MAIN_CHAT_ID'):
-        print("❌ Set TELEGRAM_BOT_TOKEN and MAIN_CHAT_ID")
-        sys.exit(1)
+        print("⚠️  WARNING: Telegram credentials not set")
+        print("Set TELEGRAM_BOT_TOKEN and MAIN_CHAT_ID environment variables")
+        print("Bot will run but won't send notifications\n")
     
     print("""
 ╔══════════════════════════════════════════════════════════╗
-║      BOOM & CRASH: PROVEN WORKING SYSTEM                 ║
-║      Based on Real Profitable Strategies                 ║
+║      BOOM & CRASH: CORRECTED WORKING VERSION             ║
+║      Symbol codes fixed: Using BOOM500/CRASH500          ║
 ╚══════════════════════════════════════════════════════════╝
 
-✅ WHAT MAKES THIS WORK:
+✅ SYMBOL CODES CORRECTED:
+   • Boom 300:  BOOM300N  (note the "N")
+   • Crash 300: CRASH300N (note the "N")
+   • Boom 500:  BOOM500   ✓ Currently active
+   • Crash 500: CRASH500  ✓ Currently active
 
-1. SUPPORT/RESISTANCE TRADING
-   • Boom spikes at support levels
-   • Crash drops at resistance levels
-   • Trade where spikes actually occur
+📊 CURRENT CONFIGURATION:
+   • Trading: BOOM500 & CRASH500 (confirmed working)
+   • Target: 20 pips | Stop: 40 pips
+   • Risk: 0.5% per trade
+   • Max trades: 5/day
 
-2. TREND FOLLOWING
-   • Crash: Sell resistance OR buy support in uptrend
-   • Boom: Buy support OR sell resistance in downtrend
-   • Don't fight the trend
+💡 TO USE BOOM300N/CRASH300N INSTEAD:
+   Edit Config.SYMBOLS in the script (line 43-47)
 
-3. QUICK SCALPING
-   • 15-pip targets (10-20 range)
-   • 30-pip stops (1:2 R:R minimum)
-   • Don't hold through spikes - take profit fast
+⏰ RECOMMENDED SCHEDULE:
+   Run every 5-15 minutes during London/NY overlap (13:00-16:00 UTC)
 
-4. CONSERVATIVE RISK
-   • 0.5% per trade
-   • Max 5 trades/day
-   • Max 2 concurrent trades
-   • Stop after 3 losses
+🎯 NEXT STEPS:
+   1. Test on DEMO account for 30 days
+   2. Track all trades in a spreadsheet
+   3. Only go live after proving profitability
+   4. Never risk more than 0.5% per trade
 
-5. BEST SYMBOLS
-   • Crash 300 & Boom 300 (most predictable)
-   • Least volatile = easiest to trade
-
-6. BEST TIME
-   • London/NY overlap (13:00-16:00 UTC)
-   • Highest liquidity = best fills
-
-Run every 5-15 minutes during trading hours.
-Start with DEMO account for 30 days minimum!
+Starting bot...
     """)
     
     bot = TradingBot()
