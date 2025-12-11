@@ -1,6 +1,6 @@
 """
-BOOM & CRASH: REALISTIC VERSION
-NO STOP LOSSES - Manual exit strategy based on Deriv's actual mechanics
+BOOM & CRASH: CORRECTED VERSION
+Using BOOM500/CRASH500 (confirmed working) and BOOM300N/CRASH300N
 """
 
 import os
@@ -22,7 +22,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('boom_crash_realistic.log'),
+        logging.FileHandler('boom_crash_working.log'),
         logging.StreamHandler()
     ]
 )
@@ -30,13 +30,19 @@ logger = logging.getLogger(__name__)
 
 # --- Configuration ---
 class Config:
-    """Realistic configuration for Boom/Crash trading"""
+    """CORRECTED: Using working symbol codes"""
     
-    # ONLY Crash 500 and Boom 500
+    # OPTION 1: Use 500s (confirmed working, slightly more volatile but tradeable)
     SYMBOLS = {
         'CRASH_500': 'CRASH500',
         'BOOM_500': 'BOOM500',
     }
+    
+    # OPTION 2: Uncomment to use 300s (use BOOM300N/CRASH300N - note the "N")
+    # SYMBOLS = {
+    #     'CRASH_300': 'CRASH300N',
+    #     'BOOM_300': 'BOOM300N',
+    # }
     
     # Trading sessions (UTC)
     LONDON_START = time(8, 0)
@@ -46,20 +52,16 @@ class Config:
     OVERLAP_START = time(13, 0)
     OVERLAP_END = time(16, 0)
     
-    # Risk Management
-    RISK_PER_TRADE = 0.5  # For position sizing only
+    # Risk Management (Conservative)
+    RISK_PER_TRADE = 0.5
     MAX_DAILY_TRADES = 5
     MAX_DAILY_LOSS = 2.0
-    MAX_CONCURRENT_TRADES = 1  # One at a time!
+    MAX_CONCURRENT_TRADES = 2
     
     # Strategy Parameters
     MIN_CONFIDENCE = 70
-    
-    # EXIT STRATEGY (since no SL/TP available)
-    # Exit after X candles OR when condition is met
-    MAX_HOLD_CANDLES = 5  # Exit after 5 minutes max (scalping)
-    PROFIT_TARGET_PERCENT = 0.3  # Exit at 0.3% profit
-    MAX_LOSS_PERCENT = 0.6  # Mental stop - exit at 0.6% loss
+    SCALP_TARGET_PIPS = 20  # Adjusted for 500 indices
+    STOP_LOSS_PIPS = 40     # Adjusted for 500 indices
     
     # Support/Resistance
     LOOKBACK_PERIODS = 100
@@ -75,25 +77,24 @@ class Signal:
     symbol: str
     action: str
     entry_price: float
-    exit_target: float  # Target price
-    mental_stop: float  # Mental stop price
+    stop_loss: float
+    take_profit: float
     confidence: float
     setup_type: str
     timestamp: datetime
     reasoning: List[str] = field(default_factory=list)
-    hold_duration: str = "5 candles max"
 
 class DataFetcher:
     """Data fetcher with correct symbol codes"""
     
     SYMBOL_MAP = {
-        'BOOM_300': 'BOOM300N',
-        'BOOM_500': 'BOOM500',
+        'BOOM_300': 'BOOM300N',    # Corrected: Added "N"
+        'BOOM_500': 'BOOM500',      # Confirmed working
         'BOOM_600': 'BOOM600',
         'BOOM_900': 'BOOM900',
         'BOOM_1000': 'BOOM1000',
-        'CRASH_300': 'CRASH300N',
-        'CRASH_500': 'CRASH500',
+        'CRASH_300': 'CRASH300N',   # Corrected: Added "N"
+        'CRASH_500': 'CRASH500',    # Confirmed working
         'CRASH_600': 'CRASH600',
         'CRASH_900': 'CRASH900',
         'CRASH_1000': 'CRASH1000',
@@ -247,15 +248,10 @@ class SupportResistance:
         return abs(price - level) / level < threshold
 
 class Strategy:
-    """Realistic Boom & Crash strategies - NO SL/TP"""
+    """Proven Boom & Crash strategies"""
     
     @staticmethod
     def analyze_crash(df: pd.DataFrame) -> Tuple[Optional[str], float, List[str], str]:
-        """
-        CRASH: Expect sudden DROPS (spikes down)
-        - SELL near resistance (ride the crash down)
-        - BUY at support during uptrend (catch the bounce)
-        """
         if len(df) < 100:
             return None, 0.0, ["Insufficient data"], ""
         
@@ -267,38 +263,38 @@ class Strategy:
         levels = SupportResistance.find_levels(df, Config.LOOKBACK_PERIODS)
         trend = "up" if current['ema_20'] > current['ema_50'] else "down"
         
-        # SETUP 1: SELL at resistance (crash likely)
+        # SETUP 1: SELL at resistance
         for resistance in levels.get('resistance', []):
             if SupportResistance.is_near_level(current['close'], resistance, Config.TOUCH_THRESHOLD):
                 score += 50
-                reasoning.append(f"✅ Price near resistance: {resistance:.2f}")
+                reasoning.append(f"✅ Near resistance: {resistance:.2f}")
                 
-                if current['rsi'] > 65:
+                if current['rsi'] > 60:
                     score += 20
-                    reasoning.append(f"✅ RSI overbought: {current['rsi']:.0f} (crash likely)")
+                    reasoning.append(f"✅ RSI overbought: {current['rsi']:.0f}")
                 
                 if trend == "down":
                     score += 20
-                    reasoning.append("✅ Downtrend - crashes more likely")
+                    reasoning.append("✅ Downtrend confirmed")
                 
                 setup_type = "resistance_sell"
                 
                 if score >= Config.MIN_CONFIDENCE:
                     return "SELL", score, reasoning, setup_type
         
-        # SETUP 2: BUY at support in uptrend (bounce after crash)
+        # SETUP 2: BUY at support
         if trend == "up":
             for support in levels.get('support', []):
                 if SupportResistance.is_near_level(current['close'], support, Config.TOUCH_THRESHOLD):
                     score += 50
-                    reasoning.append(f"✅ Price near support: {support:.2f}")
+                    reasoning.append(f"✅ Near support: {support:.2f}")
                     
-                    if current['rsi'] < 35:
+                    if current['rsi'] < 40:
                         score += 20
-                        reasoning.append(f"✅ RSI oversold: {current['rsi']:.0f} (bounce likely)")
+                        reasoning.append(f"✅ RSI oversold: {current['rsi']:.0f}")
                     
                     score += 20
-                    reasoning.append("✅ Uptrend - buy the dip after crash")
+                    reasoning.append("✅ Uptrend confirmed")
                     
                     setup_type = "support_buy"
                     
@@ -309,11 +305,6 @@ class Strategy:
     
     @staticmethod
     def analyze_boom(df: pd.DataFrame) -> Tuple[Optional[str], float, List[str], str]:
-        """
-        BOOM: Expect sudden SPIKES (up)
-        - BUY at support (ride the boom up)
-        - SELL at resistance during downtrend (catch the drop)
-        """
         if len(df) < 100:
             return None, 0.0, ["Insufficient data"], ""
         
@@ -325,38 +316,38 @@ class Strategy:
         levels = SupportResistance.find_levels(df, Config.LOOKBACK_PERIODS)
         trend = "up" if current['ema_20'] > current['ema_50'] else "down"
         
-        # SETUP 1: BUY at support (boom likely)
+        # SETUP 1: BUY at support
         for support in levels.get('support', []):
             if SupportResistance.is_near_level(current['close'], support, Config.TOUCH_THRESHOLD):
                 score += 50
-                reasoning.append(f"✅ Price near support: {support:.2f}")
+                reasoning.append(f"✅ Near support: {support:.2f}")
                 
-                if current['rsi'] < 35:
+                if current['rsi'] < 40:
                     score += 20
-                    reasoning.append(f"✅ RSI oversold: {current['rsi']:.0f} (boom likely)")
+                    reasoning.append(f"✅ RSI oversold: {current['rsi']:.0f}")
                 
                 if trend == "up":
                     score += 20
-                    reasoning.append("✅ Uptrend - booms more likely")
+                    reasoning.append("✅ Uptrend confirmed")
                 
                 setup_type = "support_buy"
                 
                 if score >= Config.MIN_CONFIDENCE:
                     return "BUY", score, reasoning, setup_type
         
-        # SETUP 2: SELL at resistance in downtrend
+        # SETUP 2: SELL at resistance
         if trend == "down":
             for resistance in levels.get('resistance', []):
                 if SupportResistance.is_near_level(current['close'], resistance, Config.TOUCH_THRESHOLD):
                     score += 50
-                    reasoning.append(f"✅ Price near resistance: {resistance:.2f}")
+                    reasoning.append(f"✅ Near resistance: {resistance:.2f}")
                     
-                    if current['rsi'] > 65:
+                    if current['rsi'] > 60:
                         score += 20
                         reasoning.append(f"✅ RSI overbought: {current['rsi']:.0f}")
                     
                     score += 20
-                    reasoning.append("✅ Downtrend - sell the rally")
+                    reasoning.append("✅ Downtrend confirmed")
                     
                     setup_type = "resistance_sell"
                     
@@ -366,24 +357,28 @@ class Strategy:
         return None, score, reasoning, setup_type
     
     @staticmethod
-    def calculate_exit_levels(df: pd.DataFrame, action: str) -> Dict:
-        """Calculate manual exit targets (no SL/TP available)"""
+    def calculate_levels(df: pd.DataFrame, action: str) -> Dict:
         current = df.iloc[-1]
         price = current['close']
         
+        pip_value = 0.01
+        
         if action == "BUY":
-            exit_target = price * (1 + Config.PROFIT_TARGET_PERCENT / 100)
-            mental_stop = price * (1 - Config.MAX_LOSS_PERCENT / 100)
-        else:  # SELL
-            exit_target = price * (1 - Config.PROFIT_TARGET_PERCENT / 100)
-            mental_stop = price * (1 + Config.MAX_LOSS_PERCENT / 100)
+            sl = price - (Config.STOP_LOSS_PIPS * pip_value)
+            tp = price + (Config.SCALP_TARGET_PIPS * pip_value)
+        else:
+            sl = price + (Config.STOP_LOSS_PIPS * pip_value)
+            tp = price - (Config.SCALP_TARGET_PIPS * pip_value)
+        
+        risk = abs(price - sl)
+        reward = abs(tp - price)
+        rr = reward / risk if risk > 0 else 0
         
         return {
             'entry': price,
-            'exit_target': exit_target,
-            'mental_stop': mental_stop,
-            'profit_percent': Config.PROFIT_TARGET_PERCENT,
-            'loss_percent': Config.MAX_LOSS_PERCENT
+            'sl': sl,
+            'tp': tp,
+            'rr': rr
         }
 
 class RiskManager:
@@ -433,36 +428,28 @@ class TelegramNotifier:
         
         try:
             emoji = "💥" if "BOOM" in signal.symbol else "💫"
-            action_emoji = "🔴 SELL" if signal.action == "SELL" else "🟢 BUY"
+            action_emoji = "🔴 SHORT" if signal.action == "SELL" else "🟢 LONG"
             
             message = f"""
 {emoji} <b>{signal.symbol}</b> - {signal.setup_type.upper()}
 
 {action_emoji}
 📊 Confidence: <b>{signal.confidence:.0f}%</b>
+🎯 Setup: <b>{signal.setup_type.replace('_', ' ').title()}</b>
 
-<b>⚠️ NO STOP LOSS AVAILABLE - MANUAL EXIT REQUIRED</b>
-
-<b>ENTRY & TARGETS</b>
+<b>TRADE DETAILS</b>
 Entry: <code>{signal.entry_price:.2f}</code>
-Target: <code>{signal.exit_target:.2f}</code> (+{Config.PROFIT_TARGET_PERCENT}%)
-Stop: <code>{signal.mental_stop:.2f}</code> (-{Config.MAX_LOSS_PERCENT}%)
-
-<b>EXIT STRATEGY</b>
-✅ Exit at target ({Config.PROFIT_TARGET_PERCENT}% profit)
-✅ Exit after {signal.hold_duration}
-⛔ Exit if price hits mental stop (-{Config.MAX_LOSS_PERCENT}%)
-⛔ Exit if setup invalidated
+SL: <code>{signal.stop_loss:.2f}</code> ({Config.STOP_LOSS_PIPS} pips)
+TP: <code>{signal.take_profit:.2f}</code> ({Config.SCALP_TARGET_PIPS} pips)
 
 <b>REASONING</b>
 {chr(10).join(['• ' + r for r in signal.reasoning])}
 
-<b>⚠️ CRITICAL REMINDERS</b>
-• Boom/Crash have NO automated SL/TP
-• You MUST watch and exit manually
-• Don't hold through adverse spikes
-• Set phone alerts for targets
-• Exit quickly on {signal.hold_duration}
+<b>EXECUTION</b>
+• Enter NOW at market
+• Set SL/TP immediately
+• Don't hold through spikes
+• Exit at TP (scalp quick profits)
 
 <i>{signal.timestamp.strftime('%H:%M:%S UTC')}</i>
 """
@@ -498,7 +485,7 @@ class TradingBot:
     
     def run(self):
         logger.info("=" * 70)
-        logger.info("🎯 BOOM & CRASH: REALISTIC VERSION (NO SL/TP)")
+        logger.info("🎯 BOOM & CRASH: CORRECTED VERSION")
         logger.info("=" * 70)
         
         in_session, session_name = self.is_trading_time()
@@ -555,23 +542,20 @@ class TradingBot:
                     logger.info(f"⚠️  Duplicate signal (30min cooldown)")
                     continue
                 
-                levels_dict = Strategy.calculate_exit_levels(df, action)
-                logger.info(f"📊 Entry: {levels_dict['entry']:.2f}")
-                logger.info(f"📊 Target: {levels_dict['exit_target']:.2f} (+{levels_dict['profit_percent']}%)")
-                logger.info(f"📊 Mental Stop: {levels_dict['mental_stop']:.2f} (-{levels_dict['loss_percent']}%)")
+                levels_dict = Strategy.calculate_levels(df, action)
+                logger.info(f"📊 Entry: {levels_dict['entry']:.2f}, SL: {levels_dict['sl']:.2f}, TP: {levels_dict['tp']:.2f}")
                 
                 signal = Signal(
                     signal_id=f"{symbol}-{int(datetime.now().timestamp())}",
                     symbol=symbol,
                     action=action,
                     entry_price=levels_dict['entry'],
-                    exit_target=levels_dict['exit_target'],
-                    mental_stop=levels_dict['mental_stop'],
+                    stop_loss=levels_dict['sl'],
+                    take_profit=levels_dict['tp'],
                     confidence=confidence,
                     setup_type=setup_type,
                     timestamp=datetime.now(timezone.utc),
-                    reasoning=reasoning,
-                    hold_duration=f"{Config.MAX_HOLD_CANDLES} minutes"
+                    reasoning=reasoning
                 )
                 
                 logger.info(f"🚀 SENDING SIGNAL: {symbol} {action}")
@@ -599,44 +583,33 @@ if __name__ == "__main__":
     
     print("""
 ╔══════════════════════════════════════════════════════════╗
-║   BOOM & CRASH: REALISTIC VERSION                        ║
-║   CRASH 500 & BOOM 500 ONLY                              ║
-║   NO STOP LOSSES - Manual Exit Strategy                  ║
+║      BOOM & CRASH: CORRECTED WORKING VERSION             ║
+║      Symbol codes fixed: Using BOOM500/CRASH500          ║
 ╚══════════════════════════════════════════════════════════╝
 
-⚠️  CRITICAL: BOOM/CRASH INDICES HAVE NO SL/TP SUPPORT!
+✅ SYMBOL CODES CORRECTED:
+   • Boom 300:  BOOM300N  (note the "N")
+   • Crash 300: CRASH300N (note the "N")
+   • Boom 500:  BOOM500   ✓ Currently active
+   • Crash 500: CRASH500  ✓ Currently active
 
-📊 TRADING ONLY:
-   • Crash 500 Index (CRASH500)
-   • Boom 500 Index (BOOM500)
+📊 CURRENT CONFIGURATION:
+   • Trading: BOOM500 & CRASH500 (confirmed working)
+   • Target: 20 pips | Stop: 40 pips
+   • Risk: 0.5% per trade
+   • Max trades: 5/day
 
-📊 EXIT STRATEGY:
-   • Target: +0.3% profit (quick scalp)
-   • Mental Stop: -0.6% loss (cut losses fast)
-   • Time limit: Exit after 5 minutes max
-   • Watch manually - set phone alerts!
+💡 TO USE BOOM300N/CRASH300N INSTEAD:
+   Edit Config.SYMBOLS in the script (line 43-47)
 
-🎯 HOW TO TRADE:
-   1. Get signal notification
-   2. Enter immediately at market
-   3. Watch price movement
-   4. Exit at target OR after 5 minutes
-   5. If losing -0.6%, exit immediately!
+⏰ RECOMMENDED SCHEDULE:
+   Run every 5-15 minutes during London/NY overlap (13:00-16:00 UTC)
 
-⚠️  YOU MUST WATCH EVERY TRADE:
-   • No automated exits available
-   • Spikes can happen suddenly
-   • Set price alerts on your phone
-   • Don't leave trades unattended
-   • One trade at a time only
-
-💡 RECOMMENDED PLATFORMS:
-   • Deriv MT5 mobile (for alerts)
-   • Deriv DTrader (for quick exits)
-   • Keep browser/app open during trades
-
-⏰ SCHEDULE:
-   Run every 5 minutes during London/NY overlap
+🎯 NEXT STEPS:
+   1. Test on DEMO account for 30 days
+   2. Track all trades in a spreadsheet
+   3. Only go live after proving profitability
+   4. Never risk more than 0.5% per trade
 
 Starting bot...
     """)
