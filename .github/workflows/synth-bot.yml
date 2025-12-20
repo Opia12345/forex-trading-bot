@@ -1,51 +1,51 @@
-name: Synthetic Indices Trading Bot
+# name: Synthetic Indices Trading Bot
 
-on:
-  schedule:
-    # Runs every 15 minutes (00, 15, 30, 45)
-    - cron: '*/15 * * * *'
+# on:
+#   schedule:
+#     # Runs every 15 minutes (00, 15, 30, 45)
+#     - cron: '*/15 * * * *'
   
-  # Allows manual trigger from GitHub Actions tab
-  workflow_dispatch:
+#   # Allows manual trigger from GitHub Actions tab
+#   workflow_dispatch:
 
-jobs:
-  run-trading-bot:
-    runs-on: ubuntu-latest
+# jobs:
+#   run-trading-bot:
+#     runs-on: ubuntu-latest
     
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+#     steps:
+#     - name: Checkout repository
+#       uses: actions/checkout@v4
     
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+#     - name: Set up Python
+#       uses: actions/setup-python@v5
+#       with:
+#         python-version: '3.11'
     
-    - name: Cache dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
+#     - name: Cache dependencies
+#       uses: actions/cache@v3
+#       with:
+#         path: ~/.cache/pip
+#         key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+#         restore-keys: |
+#           ${{ runner.os }}-pip-
     
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+#     - name: Install dependencies
+#       run: |
+#         python -m pip install --upgrade pip
+#         pip install -r requirements.txt
     
-    - name: Run trading bot
-      env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        MAIN_CHAT_ID: ${{ secrets.MAIN_CHAT_ID }}
-        STAKE_USD: ${{ secrets.STAKE_USD || '10' }}
-      run: |
-        python synthetic_bot.py
+#     - name: Run trading bot
+#       env:
+#         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+#         MAIN_CHAT_ID: ${{ secrets.MAIN_CHAT_ID }}
+#         STAKE_USD: ${{ secrets.STAKE_USD || '10' }}
+#       run: |
+#         python synthetic_bot.py
     
-    - name: Upload logs
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: bot-logs-${{ github.run_number }}
-        path: synthetic_bot.log
-        retention-days: 7
+#     - name: Upload logs
+#       if: always()
+#       uses: actions/upload-artifact@v4
+#       with:
+#         name: bot-logs-${{ github.run_number }}
+#         path: synthetic_bot.log
+#         retention-days: 7

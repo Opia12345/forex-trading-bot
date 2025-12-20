@@ -1,461 +1,461 @@
-name: Production Trading Bot v13.0
+# name: Production Trading Bot v13.0
 
-on:
-  schedule:
-    # Runs every hour at minute 0
-    - cron: '0 * * * *'
+# on:
+#   schedule:
+#     # Runs every hour at minute 0
+#     - cron: '0 * * * *'
   
-  # Allows manual trigger from Actions tab
-  workflow_dispatch:
-    inputs:
-      debug_mode:
-        description: 'Enable debug logging'
-        required: false
-        default: 'false'
-        type: boolean
-      force_run:
-        description: 'Force run even during low liquidity'
-        required: false
-        default: 'true'
-        type: boolean
+#   # Allows manual trigger from Actions tab
+#   workflow_dispatch:
+#     inputs:
+#       debug_mode:
+#         description: 'Enable debug logging'
+#         required: false
+#         default: 'false'
+#         type: boolean
+#       force_run:
+#         description: 'Force run even during low liquidity'
+#         required: false
+#         default: 'true'
+#         type: boolean
 
-concurrency:
-  group: trading-bot-execution
-  cancel-in-progress: false
+# concurrency:
+#   group: trading-bot-execution
+#   cancel-in-progress: false
 
-jobs:
-  run-trading-bot:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+# jobs:
+#   run-trading-bot:
+#     runs-on: ubuntu-latest
+#     timeout-minutes: 45
     
-    steps:
-      - name: Check emergency kill switch
-        run: |
-          echo "Checking if bot is enabled..."
-          # If BOT_ENABLED secret is set to 'false', exit gracefully
-          if [ "${{ vars.BOT_ENABLED }}" = "false" ]; then
-            echo "🛑 Bot is disabled via BOT_ENABLED variable"
-            echo "To re-enable: Set repository variable BOT_ENABLED=true"
-            exit 0
-          fi
-          echo "✅ Bot is enabled"
+#     steps:
+#       - name: Check emergency kill switch
+#         run: |
+#           echo "Checking if bot is enabled..."
+#           # If BOT_ENABLED secret is set to 'false', exit gracefully
+#           if [ "${{ vars.BOT_ENABLED }}" = "false" ]; then
+#             echo "🛑 Bot is disabled via BOT_ENABLED variable"
+#             echo "To re-enable: Set repository variable BOT_ENABLED=true"
+#             exit 0
+#           fi
+#           echo "✅ Bot is enabled"
       
-      - name: Checkout repository
-        uses: actions/checkout@v4
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
       
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          cache: 'pip'
+#       - name: Set up Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.10'
+#           cache: 'pip'
       
-      - name: Cache Python dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+#       - name: Cache Python dependencies
+#         uses: actions/cache@v4
+#         with:
+#           path: ~/.cache/pip
+#           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+#           restore-keys: |
+#             ${{ runner.os }}-pip-
       
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          else
-            echo "❌ requirements.txt not found!"
-            exit 1
-          fi
+#       - name: Install dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           if [ -f requirements.txt ]; then
+#             pip install -r requirements.txt
+#           else
+#             echo "❌ requirements.txt not found!"
+#             exit 1
+#           fi
       
-      - name: Display bot configuration
-        run: |
-          echo "╔══════════════════════════════════════════════════════════════════╗"
-          echo "║           🚀 Production Trading Bot v13.0                        ║"
-          echo "╚══════════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "Configuration:"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  Python Version:     $(python --version)"
-          echo "  Symbols:            XAUUSD (Gold), BTCUSD (Bitcoin)"
-          echo "  Indicators:         EMA, RSI, ADX, ATR (Simplified)"
-          echo "  Signal Types:       Scalp, Day Trade, Swing"
-          echo "  Min Confidence:     70-80% (Signal Type Dependent)"
-          echo "  Features:           Slippage Modeling, Performance Tracking"
-          echo "  Position Mgmt:      Trailing Stops, Partial Exits"
-          echo "  Data Source:        Deriv API (Real-time)"
-          echo "  Frequency:          Every hour (on the hour)"
-          echo "  Execution Time:     $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
-          echo "  GitHub Run:         #${{ github.run_number }}"
-          echo "  Debug Mode:         ${{ inputs.debug_mode }}"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo ""
+#       - name: Display bot configuration
+#         run: |
+#           echo "╔══════════════════════════════════════════════════════════════════╗"
+#           echo "║           🚀 Production Trading Bot v13.0                        ║"
+#           echo "╚══════════════════════════════════════════════════════════════════╝"
+#           echo ""
+#           echo "Configuration:"
+#           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+#           echo "  Python Version:     $(python --version)"
+#           echo "  Symbols:            XAUUSD (Gold), BTCUSD (Bitcoin)"
+#           echo "  Indicators:         EMA, RSI, ADX, ATR (Simplified)"
+#           echo "  Signal Types:       Scalp, Day Trade, Swing"
+#           echo "  Min Confidence:     70-80% (Signal Type Dependent)"
+#           echo "  Features:           Slippage Modeling, Performance Tracking"
+#           echo "  Position Mgmt:      Trailing Stops, Partial Exits"
+#           echo "  Data Source:        Deriv API (Real-time)"
+#           echo "  Frequency:          Every hour (on the hour)"
+#           echo "  Execution Time:     $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
+#           echo "  GitHub Run:         #${{ github.run_number }}"
+#           echo "  Debug Mode:         ${{ inputs.debug_mode }}"
+#           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+#           echo ""
       
-      - name: Verify environment variables
-        run: |
-          if [ -z "${{ secrets.TELEGRAM_BOT_TOKEN }}" ]; then
-            echo "❌ ERROR: TELEGRAM_BOT_TOKEN secret not set!"
-            exit 1
-          fi
-          if [ -z "${{ secrets.MAIN_CHAT_ID }}" ]; then
-            echo "❌ ERROR: MAIN_CHAT_ID secret not set!"
-            exit 1
-          fi
-          if [ -z "${{ secrets.SIMPLE_CHAT_ID }}" ]; then
-            echo "❌ ERROR: SIMPLE_CHAT_ID secret not set!"
-            exit 1
-          fi
-          echo "✅ All required secrets configured"
+#       - name: Verify environment variables
+#         run: |
+#           if [ -z "${{ secrets.TELEGRAM_BOT_TOKEN }}" ]; then
+#             echo "❌ ERROR: TELEGRAM_BOT_TOKEN secret not set!"
+#             exit 1
+#           fi
+#           if [ -z "${{ secrets.MAIN_CHAT_ID }}" ]; then
+#             echo "❌ ERROR: MAIN_CHAT_ID secret not set!"
+#             exit 1
+#           fi
+#           if [ -z "${{ secrets.SIMPLE_CHAT_ID }}" ]; then
+#             echo "❌ ERROR: SIMPLE_CHAT_ID secret not set!"
+#             exit 1
+#           fi
+#           echo "✅ All required secrets configured"
       
-      - name: Check network connectivity
-        run: |
-          echo "Testing network connectivity..."
+#       - name: Check network connectivity
+#         run: |
+#           echo "Testing network connectivity..."
           
-          # Function to test endpoint with retry
-          test_endpoint() {
-            local url=$1
-            local name=$2
-            local max_attempts=3
-            local attempt=1
+#           # Function to test endpoint with retry
+#           test_endpoint() {
+#             local url=$1
+#             local name=$2
+#             local max_attempts=3
+#             local attempt=1
             
-            while [ $attempt -le $max_attempts ]; do
-              if curl -s -o /dev/null -w "%{http_code}" "$url" | grep -q "200\|301\|302"; then
-                echo "✅ $name: Reachable"
-                return 0
-              fi
-              echo "⚠️ $name: Attempt $attempt/$max_attempts failed"
-              attempt=$((attempt + 1))
-              sleep 2
-            done
+#             while [ $attempt -le $max_attempts ]; do
+#               if curl -s -o /dev/null -w "%{http_code}" "$url" | grep -q "200\|301\|302"; then
+#                 echo "✅ $name: Reachable"
+#                 return 0
+#               fi
+#               echo "⚠️ $name: Attempt $attempt/$max_attempts failed"
+#               attempt=$((attempt + 1))
+#               sleep 2
+#             done
             
-            echo "❌ $name: Unreachable after $max_attempts attempts"
-            return 1
-          }
+#             echo "❌ $name: Unreachable after $max_attempts attempts"
+#             return 1
+#           }
           
-          test_endpoint "https://api.deriv.com" "Deriv API"
-          test_endpoint "https://api.telegram.org" "Telegram API"
+#           test_endpoint "https://api.deriv.com" "Deriv API"
+#           test_endpoint "https://api.telegram.org" "Telegram API"
       
-      - name: Check market conditions
-        id: market_check
-        run: |
-          CURRENT_HOUR=$(TZ='UTC' date '+%H')
-          CURRENT_DAY=$(TZ='UTC' date '+%u')
+#       - name: Check market conditions
+#         id: market_check
+#         run: |
+#           CURRENT_HOUR=$(TZ='UTC' date '+%H')
+#           CURRENT_DAY=$(TZ='UTC' date '+%u')
           
-          echo "Current UTC Hour: $CURRENT_HOUR"
-          echo "Current Day: $CURRENT_DAY (1=Mon, 7=Sun)"
+#           echo "Current UTC Hour: $CURRENT_HOUR"
+#           echo "Current Day: $CURRENT_DAY (1=Mon, 7=Sun)"
           
-          # Use EOF delimiter format to set outputs safely
-          DELIMITER=$(openssl rand -hex 8) # Generate a unique delimiter
+#           # Use EOF delimiter format to set outputs safely
+#           DELIMITER=$(openssl rand -hex 8) # Generate a unique delimiter
           
-          # Skip during weekend (Saturday-Sunday)
-          if [ "$CURRENT_DAY" -eq 6 ] || [ "$CURRENT_DAY" -eq 7 ]; then
-            if [ "${{ inputs.force_run }}" != "true" ]; then
-              echo "⏸️ Weekend detected - skipping run (low liquidity)"
-              echo "skip_run<<$DELIMITER" >> $GITHUB_OUTPUT
-              echo "true" >> $GITHUB_OUTPUT
-              echo "$DELIMITER" >> $GITHUB_OUTPUT
-              exit 0
-            else
-              echo "⚠️ Weekend but force_run enabled"
-            fi
-          fi
+#           # Skip during weekend (Saturday-Sunday)
+#           if [ "$CURRENT_DAY" -eq 6 ] || [ "$CURRENT_DAY" -eq 7 ]; then
+#             if [ "${{ inputs.force_run }}" != "true" ]; then
+#               echo "⏸️ Weekend detected - skipping run (low liquidity)"
+#               echo "skip_run<<$DELIMITER" >> $GITHUB_OUTPUT
+#               echo "true" >> $GITHUB_OUTPUT
+#               echo "$DELIMITER" >> $GITHUB_OUTPUT
+#               exit 0
+#             else
+#               echo "⚠️ Weekend but force_run enabled"
+#             fi
+#           fi
           
-          # Skip during low liquidity hours (22:00-02:00 UTC)
-          if [ "$CURRENT_HOUR" -ge 22 ] || [ "$CURRENT_HOUR" -le 2 ]; then
-            if [ "${{ inputs.force_run }}" != "true" ]; then
-              echo "⏸️ Low liquidity hours - skipping run"
-              echo "skip_run<<$DELIMITER" >> $GITHUB_OUTPUT
-              echo "true" >> $GITHUB_OUTPUT
-              echo "$DELIMITER" >> $GITHUB_OUTPUT
-              exit 0
-            else
-              echo "⚠️ Low liquidity hours but force_run enabled"
-            fi
-          fi
+#           # Skip during low liquidity hours (22:00-02:00 UTC)
+#           if [ "$CURRENT_HOUR" -ge 22 ] || [ "$CURRENT_HOUR" -le 2 ]; then
+#             if [ "${{ inputs.force_run }}" != "true" ]; then
+#               echo "⏸️ Low liquidity hours - skipping run"
+#               echo "skip_run<<$DELIMITER" >> $GITHUB_OUTPUT
+#               echo "true" >> $GITHUB_OUTPUT
+#               echo "$DELIMITER" >> $GITHUB_OUTPUT
+#               exit 0
+#             else
+#               echo "⚠️ Low liquidity hours but force_run enabled"
+#             fi
+#           fi
           
-          echo "✅ Market conditions suitable for trading"
-          echo "skip_run<<$DELIMITER" >> $GITHUB_OUTPUT
-          echo "false" >> $GITHUB_OUTPUT
-          echo "$DELIMITER" >> $GITHUB_OUTPUT
+#           echo "✅ Market conditions suitable for trading"
+#           echo "skip_run<<$DELIMITER" >> $GITHUB_OUTPUT
+#           echo "false" >> $GITHUB_OUTPUT
+#           echo "$DELIMITER" >> $GITHUB_OUTPUT
       
-      - name: Validate bot script
-        if: steps.market_check.outputs.skip_run != 'true'
-        run: |
-          echo "Validating trading bot script..."
+#       - name: Validate bot script
+#         if: steps.market_check.outputs.skip_run != 'true'
+#         run: |
+#           echo "Validating trading bot script..."
           
-          if [ ! -f "scripts/enhanced-trading-bot-v13.py" ]; then
-            echo "❌ scripts/enhanced-trading-bot-v13.py not found!"
-            exit 1
-          fi
+#           if [ ! -f "scripts/enhanced-trading-bot-v13.py" ]; then
+#             echo "❌ scripts/enhanced-trading-bot-v13.py not found!"
+#             exit 1
+#           fi
           
-          # Check Python syntax
-          python -m py_compile scripts/enhanced-trading-bot-v13.py
-          if [ $? -eq 0 ]; then
-            echo "✅ Script syntax valid"
-          else
-            echo "❌ Script has syntax errors"
-            exit 1
-          fi
+#           # Check Python syntax
+#           python -m py_compile scripts/enhanced-trading-bot-v13.py
+#           if [ $? -eq 0 ]; then
+#             echo "✅ Script syntax valid"
+#           else
+#             echo "❌ Script has syntax errors"
+#             exit 1
+#           fi
           
-          # Validate supporting modules
-          for module in scripts/trade_journal.py scripts/position_manager.py; do
-            if [ -f "$module" ]; then
-              python -m py_compile "$module"
-              echo "✅ $module validated"
-            else
-              echo "❌ $module not found!"
-              exit 1
-            fi
-          done
+#           # Validate supporting modules
+#           for module in scripts/trade_journal.py scripts/position_manager.py; do
+#             if [ -f "$module" ]; then
+#               python -m py_compile "$module"
+#               echo "✅ $module validated"
+#             else
+#               echo "❌ $module not found!"
+#               exit 1
+#             fi
+#           done
       
-      - name: Run production trading bot
-        if: steps.market_check.outputs.skip_run != 'true'
-        id: bot_execution
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          MAIN_CHAT_ID: ${{ secrets.MAIN_CHAT_ID }}
-          SIMPLE_CHAT_ID: ${{ secrets.SIMPLE_CHAT_ID }}
-          DERIV_APP_ID: ${{ secrets.DERIV_APP_ID }}
-          ACCOUNT_BALANCE: ${{ vars.ACCOUNT_BALANCE || '500' }}
-          RISK_PERCENT: ${{ vars.RISK_PERCENT || '2.0' }}
-          ENABLE_SCALPING: ${{ vars.ENABLE_SCALPING || 'true' }}
-          ENABLE_DAY_TRADING: ${{ vars.ENABLE_DAY_TRADING || 'true' }}
-          ENABLE_SWING_TRADING: ${{ vars.ENABLE_SWING_TRADING || 'true' }}
-          PYTHONUNBUFFERED: "1"
-          DEBUG_MODE: ${{ inputs.debug_mode }}
-        run: |
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🤖 Starting Production Trading Bot v13.0 with retry logic..."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+#       - name: Run production trading bot
+#         if: steps.market_check.outputs.skip_run != 'true'
+#         id: bot_execution
+#         env:
+#           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+#           MAIN_CHAT_ID: ${{ secrets.MAIN_CHAT_ID }}
+#           SIMPLE_CHAT_ID: ${{ secrets.SIMPLE_CHAT_ID }}
+#           DERIV_APP_ID: ${{ secrets.DERIV_APP_ID }}
+#           ACCOUNT_BALANCE: ${{ vars.ACCOUNT_BALANCE || '500' }}
+#           RISK_PERCENT: ${{ vars.RISK_PERCENT || '2.0' }}
+#           ENABLE_SCALPING: ${{ vars.ENABLE_SCALPING || 'true' }}
+#           ENABLE_DAY_TRADING: ${{ vars.ENABLE_DAY_TRADING || 'true' }}
+#           ENABLE_SWING_TRADING: ${{ vars.ENABLE_SWING_TRADING || 'true' }}
+#           PYTHONUNBUFFERED: "1"
+#           DEBUG_MODE: ${{ inputs.debug_mode }}
+#         run: |
+#           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+#           echo "🤖 Starting Production Trading Bot v13.0 with retry logic..."
+#           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
-          MAX_RETRIES=3
-          RETRY_DELAY=30
-          attempt=1
+#           MAX_RETRIES=3
+#           RETRY_DELAY=30
+#           attempt=1
           
-          # Generate a unique delimiter
-          DELIMITER=$(openssl rand -hex 8)
+#           # Generate a unique delimiter
+#           DELIMITER=$(openssl rand -hex 8)
 
-          while [ $attempt -le $MAX_RETRIES ]; do
-            echo "Attempt $attempt/$MAX_RETRIES..."
-            START_TIME=$(date +%s)
+#           while [ $attempt -le $MAX_RETRIES ]; do
+#             echo "Attempt $attempt/$MAX_RETRIES..."
+#             START_TIME=$(date +%s)
             
-            python scripts/enhanced-trading-bot-v13.py
-            EXIT_CODE=$?
+#             python scripts/enhanced-trading-bot-v13.py
+#             EXIT_CODE=$?
             
-            END_TIME=$(date +%s)
-            DURATION=$((END_TIME - START_TIME))
+#             END_TIME=$(date +%s)
+#             DURATION=$((END_TIME - START_TIME))
 
-            # FIX: Use delimiter format to set output for execution_time
-            echo "execution_time<<$DELIMITER" >> $GITHUB_OUTPUT
-            echo "$DURATION" >> $GITHUB_OUTPUT
-            echo "$DELIMITER" >> $GITHUB_OUTPUT
+#             # FIX: Use delimiter format to set output for execution_time
+#             echo "execution_time<<$DELIMITER" >> $GITHUB_OUTPUT
+#             echo "$DURATION" >> $GITHUB_OUTPUT
+#             echo "$DELIMITER" >> $GITHUB_OUTPUT
             
-            if [ $EXIT_CODE -eq 0 ]; then
-              echo "✅ Analysis completed successfully in ${DURATION}s"
-              # FIX: Use delimiter format to set output for success
-              echo "success<<$DELIMITER" >> $GITHUB_OUTPUT
-              echo "true" >> $GITHUB_OUTPUT
-              echo "$DELIMITER" >> $GITHUB_OUTPUT
-              exit 0
-            else
-              echo "❌ Attempt $attempt failed with exit code: $EXIT_CODE"
+#             if [ $EXIT_CODE -eq 0 ]; then
+#               echo "✅ Analysis completed successfully in ${DURATION}s"
+#               # FIX: Use delimiter format to set output for success
+#               echo "success<<$DELIMITER" >> $GITHUB_OUTPUT
+#               echo "true" >> $GITHUB_OUTPUT
+#               echo "$DELIMITER" >> $GITHUB_OUTPUT
+#               exit 0
+#             else
+#               echo "❌ Attempt $attempt failed with exit code: $EXIT_CODE"
               
-              if [ $attempt -lt $MAX_RETRIES ]; then
-                echo "⏳ Waiting ${RETRY_DELAY}s before retry..."
-                sleep $RETRY_DELAY
-              fi
-            fi
+#               if [ $attempt -lt $MAX_RETRIES ]; then
+#                 echo "⏳ Waiting ${RETRY_DELAY}s before retry..."
+#                 sleep $RETRY_DELAY
+#               fi
+#             fi
             
-            attempt=$((attempt + 1))
-          done
+#             attempt=$((attempt + 1))
+#           done
           
-          echo "❌ All $MAX_RETRIES attempts failed"
-          # FIX: Use delimiter format to set output for success
-          echo "success<<$DELIMITER" >> $GITHUB_OUTPUT
-          echo "false" >> $GITHUB_OUTPUT
-          echo "$DELIMITER" >> $GITHUB_OUTPUT
-          exit 1
-        timeout-minutes: 40
+#           echo "❌ All $MAX_RETRIES attempts failed"
+#           # FIX: Use delimiter format to set output for success
+#           echo "success<<$DELIMITER" >> $GITHUB_OUTPUT
+#           echo "false" >> $GITHUB_OUTPUT
+#           echo "$DELIMITER" >> $GITHUB_OUTPUT
+#           exit 1
+#         timeout-minutes: 40
       
-      - name: Check log file
-        if: always() && steps.market_check.outputs.skip_run != 'true'
-        id: log_check
-        run: |
-          # Generate a unique delimiter
-          DELIMITER=$(openssl rand -hex 8)
+#       - name: Check log file
+#         if: always() && steps.market_check.outputs.skip_run != 'true'
+#         id: log_check
+#         run: |
+#           # Generate a unique delimiter
+#           DELIMITER=$(openssl rand -hex 8)
 
-          if [ -f "production_trading_bot.log" ]; then
-            echo "📄 Log file generated successfully"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "Last 30 lines of log:"
-            tail -n 30 production_trading_bot.log
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+#           if [ -f "production_trading_bot.log" ]; then
+#             echo "📄 Log file generated successfully"
+#             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+#             echo "Last 30 lines of log:"
+#             tail -n 30 production_trading_bot.log
+#             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
-            SIGNAL_COUNT=$(grep -c "Signal sent:" production_trading_bot.log 2>/dev/null || echo "0")
-            # Ensure it's a valid number
-            SIGNAL_COUNT=${SIGNAL_COUNT:-0}
+#             SIGNAL_COUNT=$(grep -c "Signal sent:" production_trading_bot.log 2>/dev/null || echo "0")
+#             # Ensure it's a valid number
+#             SIGNAL_COUNT=${SIGNAL_COUNT:-0}
             
-            # FIX: Use delimiter format to set output for signals_found
-            echo "signals_found<<$DELIMITER" >> $GITHUB_OUTPUT
-            echo "${SIGNAL_COUNT}" >> $GITHUB_OUTPUT
-            echo "$DELIMITER" >> $GITHUB_OUTPUT
+#             # FIX: Use delimiter format to set output for signals_found
+#             echo "signals_found<<$DELIMITER" >> $GITHUB_OUTPUT
+#             echo "${SIGNAL_COUNT}" >> $GITHUB_OUTPUT
+#             echo "$DELIMITER" >> $GITHUB_OUTPUT
             
-            if [ "${SIGNAL_COUNT}" -gt 0 ] 2>/dev/null; then
-              echo "✅ ${SIGNAL_COUNT} signal(s) detected in this run!"
-              grep "Signal sent:" production_trading_bot.log
-            else
-              echo "ℹ️ No signals generated in this cycle"
-            fi
+#             if [ "${SIGNAL_COUNT}" -gt 0 ] 2>/dev/null; then
+#               echo "✅ ${SIGNAL_COUNT} signal(s) detected in this run!"
+#               grep "Signal sent:" production_trading_bot.log
+#             else
+#               echo "ℹ️ No signals generated in this cycle"
+#             fi
             
-            ERROR_COUNT=$(grep -ci "error" production_trading_bot.log 2>/dev/null || echo "0")
-            ERROR_COUNT=${ERROR_COUNT:-0}
+#             ERROR_COUNT=$(grep -ci "error" production_trading_bot.log 2>/dev/null || echo "0")
+#             ERROR_COUNT=${ERROR_COUNT:-0}
             
-            # FIX: Use delimiter format to set output for errors_found
-            echo "errors_found<<$DELIMITER" >> $GITHUB_OUTPUT
-            echo "${ERROR_COUNT}" >> $GITHUB_OUTPUT
-            echo "$DELIMITER" >> $GITHUB_OUTPUT
+#             # FIX: Use delimiter format to set output for errors_found
+#             echo "errors_found<<$DELIMITER" >> $GITHUB_OUTPUT
+#             echo "${ERROR_COUNT}" >> $GITHUB_OUTPUT
+#             echo "$DELIMITER" >> $GITHUB_OUTPUT
             
-            if [ "${ERROR_COUNT}" -gt 0 ] 2>/dev/null; then
-              echo "⚠️ ${ERROR_COUNT} error(s) detected in log"
-            fi
-          else
-            echo "❌ Log file not found!"
+#             if [ "${ERROR_COUNT}" -gt 0 ] 2>/dev/null; then
+#               echo "⚠️ ${ERROR_COUNT} error(s) detected in log"
+#             fi
+#           else
+#             echo "❌ Log file not found!"
             
-            # FIX: Use delimiter format to set output when log file is missing
-            echo "signals_found<<$DELIMITER" >> $GITHUB_OUTPUT
-            echo "0" >> $GITHUB_OUTPUT
-            echo "$DELIMITER" >> $GITHUB_OUTPUT
+#             # FIX: Use delimiter format to set output when log file is missing
+#             echo "signals_found<<$DELIMITER" >> $GITHUB_OUTPUT
+#             echo "0" >> $GITHUB_OUTPUT
+#             echo "$DELIMITER" >> $GITHUB_OUTPUT
             
-            echo "errors_found<<$DELIMITER" >> $GITHUB_OUTPUT
-            echo "0" >> $GITHUB_OUTPUT
-            echo "$DELIMITER" >> $GITHUB_OUTPUT
-          fi
+#             echo "errors_found<<$DELIMITER" >> $GITHUB_OUTPUT
+#             echo "0" >> $GITHUB_OUTPUT
+#             echo "$DELIMITER" >> $GITHUB_OUTPUT
+#           fi
       
-      - name: Upload logs and data
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: trading-bot-logs-${{ github.run_number }}-${{ github.run_attempt }}
-          path: |
-            production_trading_bot.log
-            trade_journal.db
-            *.log
-          retention-days: 30
-          if-no-files-found: warn
+#       - name: Upload logs and data
+#         if: always()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: trading-bot-logs-${{ github.run_number }}-${{ github.run_attempt }}
+#           path: |
+#             production_trading_bot.log
+#             trade_journal.db
+#             *.log
+#           retention-days: 30
+#           if-no-files-found: warn
       
-      - name: Send success notification to Telegram
-        if: success() && steps.market_check.outputs.skip_run != 'true'
-        run: |
-          SIGNALS="${{ steps.log_check.outputs.signals_found }}"
-          SIGNALS=${SIGNALS:-0}
-          ERRORS="${{ steps.log_check.outputs.errors_found }}"
-          ERRORS=${ERRORS:-0}
-          EXEC_TIME="${{ steps.bot_execution.outputs.execution_time }}"
-          EXEC_TIME=${EXEC_TIME:-0}
+#       - name: Send success notification to Telegram
+#         if: success() && steps.market_check.outputs.skip_run != 'true'
+#         run: |
+#           SIGNALS="${{ steps.log_check.outputs.signals_found }}"
+#           SIGNALS=${SIGNALS:-0}
+#           ERRORS="${{ steps.log_check.outputs.errors_found }}"
+#           ERRORS=${ERRORS:-0}
+#           EXEC_TIME="${{ steps.bot_execution.outputs.execution_time }}"
+#           EXEC_TIME=${EXEC_TIME:-0}
           
-          if [ "${SIGNALS}" -gt 0 ] 2>/dev/null; then
-            ICON="🎯"
-            STATUS="<b>Signals Generated!</b>"
-          else
-            ICON="✅"
-            STATUS="<b>Analysis Complete</b>"
-          fi
+#           if [ "${SIGNALS}" -gt 0 ] 2>/dev/null; then
+#             ICON="🎯"
+#             STATUS="<b>Signals Generated!</b>"
+#           else
+#             ICON="✅"
+#             STATUS="<b>Analysis Complete</b>"
+#           fi
           
-          MESSAGE="$ICON <b>Production Trading Bot v13.0</b>%0A%0A"
-          MESSAGE="${MESSAGE}$STATUS%0A%0A"
-          MESSAGE="${MESSAGE}<b>Summary:</b>%0A"
-          MESSAGE="${MESSAGE}• Signals: ${SIGNALS}%0A"
-          MESSAGE="${MESSAGE}• Errors: ${ERRORS}%0A"
-          MESSAGE="${MESSAGE}• Execution Time: ${EXEC_TIME}s%0A"
-          MESSAGE="${MESSAGE}• Run: #${{ github.run_number }}%0A"
-          MESSAGE="${MESSAGE}• Time: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')%0A%0A"
+#           MESSAGE="$ICON <b>Production Trading Bot v13.0</b>%0A%0A"
+#           MESSAGE="${MESSAGE}$STATUS%0A%0A"
+#           MESSAGE="${MESSAGE}<b>Summary:</b>%0A"
+#           MESSAGE="${MESSAGE}• Signals: ${SIGNALS}%0A"
+#           MESSAGE="${MESSAGE}• Errors: ${ERRORS}%0A"
+#           MESSAGE="${MESSAGE}• Execution Time: ${EXEC_TIME}s%0A"
+#           MESSAGE="${MESSAGE}• Run: #${{ github.run_number }}%0A"
+#           MESSAGE="${MESSAGE}• Time: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')%0A%0A"
           
-          if [ "${SIGNALS}" -eq 0 ] 2>/dev/null; then
-            MESSAGE="${MESSAGE}<i>No trading opportunities detected this cycle</i>"
-          fi
+#           if [ "${SIGNALS}" -eq 0 ] 2>/dev/null; then
+#             MESSAGE="${MESSAGE}<i>No trading opportunities detected this cycle</i>"
+#           fi
           
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.MAIN_CHAT_ID }}" \
-            -d "text=${MESSAGE}" \
-            -d "parse_mode=HTML" \
-            -d "disable_web_page_preview=true" || echo "⚠️ Failed to send success notification"
+#           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+#             -d "chat_id=${{ secrets.MAIN_CHAT_ID }}" \
+#             -d "text=${MESSAGE}" \
+#             -d "parse_mode=HTML" \
+#             -d "disable_web_page_preview=true" || echo "⚠️ Failed to send success notification"
       
-      - name: Send failure notification to Telegram
-        if: failure() && steps.market_check.outputs.skip_run != 'true'
-        run: |
-          ERRORS="${{ steps.log_check.outputs.errors_found }}"
-          ERRORS=${ERRORS:-0}
-          EXEC_TIME="${{ steps.bot_execution.outputs.execution_time }}"
-          EXEC_TIME=${EXEC_TIME:-0}
+#       - name: Send failure notification to Telegram
+#         if: failure() && steps.market_check.outputs.skip_run != 'true'
+#         run: |
+#           ERRORS="${{ steps.log_check.outputs.errors_found }}"
+#           ERRORS=${ERRORS:-0}
+#           EXEC_TIME="${{ steps.bot_execution.outputs.execution_time }}"
+#           EXEC_TIME=${EXEC_TIME:-0}
           
-          MESSAGE="🚨 <b>Production Trading Bot v13.0 Alert</b>%0A%0A"
-          MESSAGE="${MESSAGE}❌ <b>Execution Failed</b>%0A%0A"
-          MESSAGE="${MESSAGE}<b>Details:</b>%0A"
-          MESSAGE="${MESSAGE}• GitHub Run: #${{ github.run_number }}%0A"
-          MESSAGE="${MESSAGE}• Time: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')%0A"
-          MESSAGE="${MESSAGE}• Branch: ${{ github.ref_name }}%0A"
-          MESSAGE="${MESSAGE}• Errors in Log: ${ERRORS}%0A"
+#           MESSAGE="🚨 <b>Production Trading Bot v13.0 Alert</b>%0A%0A"
+#           MESSAGE="${MESSAGE}❌ <b>Execution Failed</b>%0A%0A"
+#           MESSAGE="${MESSAGE}<b>Details:</b>%0A"
+#           MESSAGE="${MESSAGE}• GitHub Run: #${{ github.run_number }}%0A"
+#           MESSAGE="${MESSAGE}• Time: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')%0A"
+#           MESSAGE="${MESSAGE}• Branch: ${{ github.ref_name }}%0A"
+#           MESSAGE="${MESSAGE}• Errors in Log: ${ERRORS}%0A"
           
-          if [ "${EXEC_TIME}" -gt 0 ] 2>/dev/null; then
-            MESSAGE="${MESSAGE}• Execution Time: ${EXEC_TIME}s%0A"
-          fi
+#           if [ "${EXEC_TIME}" -gt 0 ] 2>/dev/null; then
+#             MESSAGE="${MESSAGE}• Execution Time: ${EXEC_TIME}s%0A"
+#           fi
           
-          MESSAGE="${MESSAGE}%0A<b>Action Required:</b>%0A"
-          MESSAGE="${MESSAGE}• Check logs in GitHub Actions%0A"
-          MESSAGE="${MESSAGE}• Review error messages%0A"
-          MESSAGE="${MESSAGE}• Consider setting BOT_ENABLED=false if issues persist%0A%0A"
-          MESSAGE="${MESSAGE}<i>View logs:</i>%0A"
-          MESSAGE="${MESSAGE}https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+#           MESSAGE="${MESSAGE}%0A<b>Action Required:</b>%0A"
+#           MESSAGE="${MESSAGE}• Check logs in GitHub Actions%0A"
+#           MESSAGE="${MESSAGE}• Review error messages%0A"
+#           MESSAGE="${MESSAGE}• Consider setting BOT_ENABLED=false if issues persist%0A%0A"
+#           MESSAGE="${MESSAGE}<i>View logs:</i>%0A"
+#           MESSAGE="${MESSAGE}https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.MAIN_CHAT_ID }}" \
-            -d "text=${MESSAGE}" \
-            -d "parse_mode=HTML" \
-            -d "disable_web_page_preview=true" || echo "⚠️ Failed to send failure notification"
+#           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+#             -d "chat_id=${{ secrets.MAIN_CHAT_ID }}" \
+#             -d "text=${MESSAGE}" \
+#             -d "parse_mode=HTML" \
+#             -d "disable_web_page_preview=true" || echo "⚠️ Failed to send failure notification"
       
-      - name: Send skip notification to Telegram
-        if: steps.market_check.outputs.skip_run == 'true'
-        run: |
-          MESSAGE="⏸️ <b>Production Trading Bot v13.0</b>%0A%0A"
-          MESSAGE="${MESSAGE}Analysis skipped - Low liquidity period%0A%0A"
-          MESSAGE="${MESSAGE}<b>Details:</b>%0A"
-          MESSAGE="${MESSAGE}• Time: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')%0A"
-          MESSAGE="${MESSAGE}• Reason: Weekend or off-hours%0A%0A"
-          MESSAGE="${MESSAGE}<i>Next run: Top of next hour</i>"
+#       - name: Send skip notification to Telegram
+#         if: steps.market_check.outputs.skip_run == 'true'
+#         run: |
+#           MESSAGE="⏸️ <b>Production Trading Bot v13.0</b>%0A%0A"
+#           MESSAGE="${MESSAGE}Analysis skipped - Low liquidity period%0A%0A"
+#           MESSAGE="${MESSAGE}<b>Details:</b>%0A"
+#           MESSAGE="${MESSAGE}• Time: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')%0A"
+#           MESSAGE="${MESSAGE}• Reason: Weekend or off-hours%0A%0A"
+#           MESSAGE="${MESSAGE}<i>Next run: Top of next hour</i>"
           
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.MAIN_CHAT_ID }}" \
-            -d "text=${MESSAGE}" \
-            -d "parse_mode=HTML" \
-            -d "disable_web_page_preview=true" || echo "⚠️ Failed to send skip notification"
+#           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+#             -d "chat_id=${{ secrets.MAIN_CHAT_ID }}" \
+#             -d "text=${MESSAGE}" \
+#             -d "parse_mode=HTML" \
+#             -d "disable_web_page_preview=true" || echo "⚠️ Failed to send skip notification"
       
-      - name: Execution summary
-        if: always()
-        run: |
-          echo ""
-          echo "╔══════════════════════════════════════════════════════════════════╗"
-          echo "║                    📊 EXECUTION SUMMARY                         ║"
-          echo "╚══════════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "Run #${{ github.run_number }} - Attempt #${{ github.run_attempt }}"
-          echo "Status: ${{ job.status }}"
-          echo "Completed: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
-          echo ""
+#       - name: Execution summary
+#         if: always()
+#         run: |
+#           echo ""
+#           echo "╔══════════════════════════════════════════════════════════════════╗"
+#           echo "║                    📊 EXECUTION SUMMARY                         ║"
+#           echo "╚══════════════════════════════════════════════════════════════════╝"
+#           echo ""
+#           echo "Run #${{ github.run_number }} - Attempt #${{ github.run_attempt }}"
+#           echo "Status: ${{ job.status }}"
+#           echo "Completed: $(TZ='UTC' date '+%Y-%m-%d %H:%M:%S %Z')"
+#           echo ""
           
-          if [ "${{ steps.market_check.outputs.skip_run }}" = "true" ]; then
-            echo "⏸️ Run skipped - Low liquidity period"
-          elif [ "${{ job.status }}" = "success" ]; then
-            echo "✅ Bot executed successfully"
-            echo "📊 Signals: ${{ steps.log_check.outputs.signals_found }}"
-            echo "⚠️ Errors: ${{ steps.log_check.outputs.errors_found }}"
-            echo "⏱️ Execution Time: ${{ steps.bot_execution.outputs.execution_time }}s"
-            echo "📄 Logs and database uploaded as artifact"
-          else
-            echo "❌ Bot execution had issues"
-            echo "🔍 Review logs in GitHub Actions artifacts"
-            echo "📱 Failure notification sent to Telegram"
-          fi
-          echo ""
-          echo "Next scheduled run: Top of next hour"
-          echo "Manual trigger: Available in Actions tab"
-          echo "Emergency disable: Set BOT_ENABLED=false in repository variables"
-          echo ""
+#           if [ "${{ steps.market_check.outputs.skip_run }}" = "true" ]; then
+#             echo "⏸️ Run skipped - Low liquidity period"
+#           elif [ "${{ job.status }}" = "success" ]; then
+#             echo "✅ Bot executed successfully"
+#             echo "📊 Signals: ${{ steps.log_check.outputs.signals_found }}"
+#             echo "⚠️ Errors: ${{ steps.log_check.outputs.errors_found }}"
+#             echo "⏱️ Execution Time: ${{ steps.bot_execution.outputs.execution_time }}s"
+#             echo "📄 Logs and database uploaded as artifact"
+#           else
+#             echo "❌ Bot execution had issues"
+#             echo "🔍 Review logs in GitHub Actions artifacts"
+#             echo "📱 Failure notification sent to Telegram"
+#           fi
+#           echo ""
+#           echo "Next scheduled run: Top of next hour"
+#           echo "Manual trigger: Available in Actions tab"
+#           echo "Emergency disable: Set BOT_ENABLED=false in repository variables"
+#           echo ""
